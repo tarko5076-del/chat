@@ -8,18 +8,12 @@ from app.agent.memory import ConversationMemory
 class LocalPlanner:
     def plan(self, message: str, memory: ConversationMemory) -> list[dict[str, Any]]:
         text = message.lower()
+        has_explicit_keyword = self._has_explicit_intent_keyword(text)
 
-        # 1. Check if this continues an existing reservation or order flow
-        if self._provides_reservation_followup(text, memory):
-            return [{"tool": "manage_reservation", "args": self._reservation_args(text, memory)}]
-
-        if self._refers_to_existing_reservation(text, memory):
-            return [{"tool": "manage_reservation", "args": self._reservation_args(text, memory)}]
-
-        if memory.current_order_items() and self._provides_order_followup(text, memory):
-            return [{"tool": "manage_order", "args": self._order_args(message, memory)}]
-
-        # 2. Intent keywords — but only if we are NOT in the middle of another flow
+        # 1. Explicit intent keywords — these take priority over everything else.
+        #    Must run BEFORE context-aware follow-up checks because memory
+        #    may have been populated with reservation-like fields from the
+        #    same message (e.g. "Show today's menu" extracts "today" as a date).
         if "reservation" in text or "table" in text or "book" in text or "reserve" in text:
             return [{"tool": "manage_reservation", "args": self._reservation_args(text, memory)}]
 
@@ -32,11 +26,22 @@ class LocalPlanner:
         if "bill" in text or "total" in text or "split" in text:
             return [{"tool": "calculate_bill", "args": self._billing_args(text, memory)}]
 
-        # 3. FAQ — only after checking for in-progress flows
         if self._is_faq(text):
             return [{"tool": "answer_faq", "args": {"question": message}}]
 
-        # 4. Fallback — if we are in any reservation flow, stay on it
+        # 2. Context-aware follow-ups for messages that continue a flow
+        #    but do NOT contain explicit intent keywords.
+        if not has_explicit_keyword:
+            if self._provides_reservation_followup(text, memory):
+                return [{"tool": "manage_reservation", "args": self._reservation_args(text, memory)}]
+
+            if self._refers_to_existing_reservation(text, memory):
+                return [{"tool": "manage_reservation", "args": self._reservation_args(text, memory)}]
+
+            if memory.current_order_items() and self._provides_order_followup(text, memory):
+                return [{"tool": "manage_order", "args": self._order_args(message, memory)}]
+
+        # 3. Fallback — if we are in any reservation or order flow
         if self._has_reservation_context(memory):
             return [{"tool": "manage_reservation", "args": self._reservation_args(text, memory)}]
 
@@ -44,6 +49,19 @@ class LocalPlanner:
             return [{"tool": "manage_order", "args": self._order_args(message, memory)}]
 
         return [{"tool": "answer_faq", "args": {"question": message}}]
+
+    def _has_explicit_intent_keyword(self, text: str) -> bool:
+        """Check if the message contains any top-level intent keyword."""
+        return any(
+            word in text
+            for word in [
+                "reservation", "table", "book", "reserve",
+                "order", "add", "remove", "cart",
+                "menu", "recommend", "vegetarian", "vegan", "spicy",
+                "bill", "total", "split",
+                "hour", "hours", "open", "address", "parking", "wifi",
+            ]
+        )
 
     def _has_reservation_context(self, memory: ConversationMemory) -> bool:
         """Return True if the conversation has any pending reservation details."""

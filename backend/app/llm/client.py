@@ -11,7 +11,10 @@ logger = logging.getLogger(__name__)
 
 class LLMClient:
     def __init__(self) -> None:
-        self.enabled = bool(settings.llm_api_key)
+        # Only enable the LLM when an OpenAI-compatible API key is explicitly provided.
+        # Hugging Face tokens will use the keyword-based local planner instead,
+        # which is more reliable for tool selection than smaller HF models.
+        self.enabled = bool(settings.openai_api_key)
         self.model = settings.llm_model
         self.client = self._build_client() if self.enabled else None
 

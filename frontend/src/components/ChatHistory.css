@@ -1,3 +1,4 @@
+tory · CSS
 .history-backdrop {
   position: fixed;
   inset: 0;
@@ -8,42 +9,44 @@
   pointer-events: none;
   transition: opacity 0.24s ease;
 }
-
+ 
 .history-backdrop--open {
   opacity: 1;
   pointer-events: auto;
 }
-
+ 
 .history-panel {
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 20;
-  width: min(92vw, 420px);
-  display: grid;
-  grid-template-rows: auto auto minmax(150px, 0.95fr) minmax(150px, 1fr) auto;
-  gap: 16px;
-  max-height: 100vh;
-  max-height: 100dvh;
-  padding: 20px;
+  width: min(92vw, 440px);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100vh;
+  height: 100dvh;
+  padding: 28px 24px 28px 36px;
   background: rgba(12, 18, 20, 0.98);
   border-right: 1px solid rgba(205, 231, 235, 0.14);
   box-shadow: 20px 0 60px rgba(0, 0, 0, 0.42);
   transform: translateX(-104%);
   transition: transform 0.28s ease;
 }
-
+ 
 .history-panel--open {
   transform: translateX(0);
 }
-
-.history-panel__header,
-.history-panel__section-header {
+ 
+/* ── Header row ── */
+ 
+.history-panel__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
+  flex-shrink: 0;
 }
-
+ 
 .history-panel__eyebrow,
 .history-panel__conversation-meta,
 .history-panel__item span,
@@ -53,14 +56,16 @@
   font-size: 0.74rem;
   font-weight: 800;
 }
-
+ 
 .history-panel__title {
   margin-top: 4px;
   color: #e7fcfb;
   font-size: 1.45rem;
   letter-spacing: 0;
 }
-
+ 
+/* ── All buttons ── */
+ 
 .history-panel__close,
 .history-panel__new,
 .history-panel__clear,
@@ -73,7 +78,7 @@
   cursor: pointer;
   transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
 }
-
+ 
 .history-panel__close:hover,
 .history-panel__new:hover,
 .history-panel__clear:hover,
@@ -82,83 +87,102 @@
   border-color: rgba(67, 231, 247, 0.45);
   transform: translateY(-1px);
 }
-
+ 
 .history-panel__close {
-  padding: 8px 12px;
-  font-size: 0.84rem;
+  padding: 10px 20px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
-
+ 
 .history-panel__new {
   width: 100%;
-  padding: 13px 16px;
+  padding: 14px 20px;
   background: #12e4f4;
   color: #093d45;
+  font-size: 1rem;
   font-weight: 800;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
-
+ 
+/* ── Sections (conversations + messages) ── */
+ 
 .history-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 10px;
+  flex: 1;
+  overflow: visible;
 }
-
+ 
 .history-panel__section-header {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
 }
-
+ 
 .history-panel__section-header h3 {
   color: #e7fcfb;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 800;
 }
-
+ 
+/* ── Scrollable lists ── */
+ 
 .history-panel__conversation-list,
 .history-panel__list {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-width: thin;
   scrollbar-color: rgba(205, 231, 235, 0.28) transparent;
 }
-
+ 
 .history-panel__conversation-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
+ 
+/* ── Conversation items ── */
+ 
 .history-panel__conversation,
 .history-panel__item {
   border: 1px solid rgba(205, 231, 235, 0.12);
   border-radius: 14px;
   background: rgba(21, 29, 31, 0.76);
 }
-
+ 
 .history-panel__conversation {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: stretch;
-  overflow: hidden;
+  flex-shrink: 0;
 }
-
+ 
 .history-panel__conversation--active {
   border-color: rgba(67, 231, 247, 0.48);
-  box-shadow: inset 4px 0 0 rgba(67, 231, 247, 0.72);
+  border-left: 4px solid rgba(67, 231, 247, 0.72);
 }
-
+ 
 .history-panel__conversation-main {
   min-width: 0;
   display: grid;
-  gap: 7px;
-  padding: 13px 12px 13px 16px;
+  gap: 8px;
+  padding: 14px 14px 14px 28px;
   border: 0;
   background: transparent;
   color: #e8f0f1;
   text-align: left;
   cursor: pointer;
 }
-
+ 
 .history-panel__conversation-title {
   min-width: 0;
   overflow: hidden;
@@ -166,105 +190,116 @@
   white-space: nowrap;
   font-weight: 800;
 }
-
+ 
 .history-panel__conversation-meta {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
+ 
 .history-panel__delete {
   align-self: center;
-  margin-right: 8px;
-  padding: 8px 10px;
+  margin-right: 10px;
+  padding: 10px 13px;
   color: #ffd5df;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
 }
-
+ 
+/* ── Message items ── */
+ 
 .history-panel__list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
+ 
 .history-panel__item {
   display: grid;
-  gap: 8px;
-  max-height: 150px;
+  gap: 10px;
+  max-height: 160px;
   overflow: hidden;
-  padding: 13px;
+  padding: 16px 20px 16px 28px;
   color: #e8f0f1;
-  line-height: 1.38;
+  line-height: 1.45;
+  flex-shrink: 0;
 }
-
+ 
 .history-panel__item p {
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
-
+ 
 .history-panel__item--user {
   border-color: rgba(186, 93, 212, 0.35);
 }
-
+ 
 .history-panel__item--user,
 .history-panel__item--user span {
   color: #f6ddff;
 }
-
+ 
 .history-panel__replay {
   justify-self: start;
-  padding: 7px 10px;
+  padding: 9px 14px;
   color: #f6ddff;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
-
+ 
 .history-panel__empty {
   color: #9fb2b6;
-  line-height: 1.45;
+  line-height: 1.6;
 }
-
+ 
+/* ── Clear button ── */
+ 
 .history-panel__clear {
-  padding: 13px 16px;
+  flex-shrink: 0;
+  padding: 14px 20px;
   color: #ffd5df;
+  font-size: 0.92rem;
+  font-weight: 700;
 }
-
+ 
+/* ── Responsive ── */
+ 
 @media (min-width: 1100px) {
   .history-panel {
-    left: calc((100vw - 920px) / 2);
     height: min(100vh, 920px);
     height: min(100dvh, 920px);
     border-radius: 0 18px 18px 0;
   }
 }
-
+ 
 @media (max-width: 460px) {
   .history-panel {
     width: min(94vw, 360px);
-    padding: 16px;
-    gap: 12px;
+    padding: 20px 16px 20px 24px;
+    gap: 16px;
   }
-
+ 
   .history-panel__title {
     font-size: 1.25rem;
   }
-
+ 
   .history-panel__conversation {
     grid-template-columns: minmax(0, 1fr);
   }
-
+ 
   .history-panel__delete {
     justify-self: start;
-    margin: 0 0 10px 16px;
+    margin: 0 0 12px 24px;
   }
 }
-
+ 
 @media (max-height: 620px) and (orientation: landscape) {
   .history-panel {
-    width: min(460px, 72vw);
+    width: min(480px, 72vw);
     padding: 14px;
-    gap: 10px;
-    grid-template-rows: auto auto minmax(110px, 1fr) minmax(110px, 1fr) auto;
+    gap: 12px;
   }
 }
