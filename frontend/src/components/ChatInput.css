@@ -1,0 +1,101 @@
+.chat-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 12px;
+  margin: 0 24px 22px;
+  padding: 10px 10px 10px 18px;
+  border: 1px solid rgba(205, 231, 235, 0.12);
+  border-radius: 18px;
+  background: rgba(19, 27, 29, 0.96);
+  box-shadow:
+    0 0 28px rgba(210, 235, 239, 0.08),
+    0 14px 34px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.chat-input__field {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #edf3f4;
+  font-size: 1rem;
+}
+
+.chat-input__field::placeholder {
+  color: #78868a;
+}
+
+.chat-input__field:disabled {
+  cursor: not-allowed;
+}
+
+.chat-input__button {
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 14px;
+  background: #12e4f4;
+  color: #0b4d59;
+  box-shadow: 0 0 22px rgba(18, 228, 244, 0.32);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease;
+}
+
+.chat-input__button span {
+  width: 18px;
+  height: 18px;
+  border-top: 4px solid currentColor;
+  border-left: 4px solid currentColor;
+  transform: translateY(4px) rotate(45deg);
+  position: relative;
+}
+
+.chat-input__button span::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 25px;
+  background: currentColor;
+  left: 5px;
+  top: -1px;
+}
+
+.chat-input__button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 0 32px rgba(18, 228, 244, 0.46);
+}
+
+.chat-input__button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.97);
+}
+
+.chat-input__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 460px) {
+  .chat-input {
+    grid-template-columns: minmax(0, 1fr) 46px;
+    gap: 8px;
+    padding: 8px 8px 8px 14px;
+    border-radius: 16px;
+  }
+
+  .chat-input__field {
+    min-height: 42px;
+    font-size: 0.94rem;
+  }
+
+  .chat-input__button {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+  }
+}

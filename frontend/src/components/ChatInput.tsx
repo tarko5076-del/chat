@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import "./ChatInput.css";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -28,7 +29,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         type="text"
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
-        placeholder="Type your message..."
+        placeholder="Ask about menus, reservations, or bills"
         disabled={disabled}
         autoFocus
       />
@@ -37,7 +38,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         type="submit"
         disabled={disabled || inputValue.trim() === ""}
       >
-        Send
+        <span aria-hidden="true"></span>
       </button>
     </form>
   );

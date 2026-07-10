@@ -1,4 +1,4 @@
-"""FastAPI application entry point for the AI Chatbot."""
+"""FastAPI application entry point for the Restaurant AI Assistant."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,11 +6,12 @@ import uvicorn
 
 from app.api.routes import router
 from app.core.config import settings
+from app.seed import seed_menu
 
 app = FastAPI(
     title=settings.app_name,
     version="1.0.0",
-    description="A simple AI chatbot powered by OpenRouter.",
+    description="A restaurant AI agent with tools, memory, and reservations.",
 )
 
 app.add_middleware(
@@ -22,6 +23,12 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+
+
+@app.on_event("startup")
+def startup() -> None:
+    """Prepare local demo data."""
+    seed_menu()
 
 
 @app.get("/health")
