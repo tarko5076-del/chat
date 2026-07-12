@@ -192,12 +192,20 @@ class LocalPlanner:
             name = match.group(1).strip()
             if name.lower() not in {"dinner", "lunch", "breakfast", "tonight", "tomorrow", "today"}:
                 return name.title()
+        # Fallback: bare single name (e.g. "tarko" without "my name is")
+        stripped = text.strip()
+        if re.fullmatch(r"[A-Za-z]+(?:['-][A-Za-z]+)?", stripped, re.I):
+            common = {"yes", "no", "ok", "okay", "please", "thanks", "hello", "hi", "hey", "help"}
+            if stripped.lower() not in common:
+                return stripped.title()
         return None
 
     def _order_args(self, message: str, memory: ConversationMemory) -> dict[str, Any]:
         text = message.lower()
         action = "show"
-        if "remove" in text:
+        if re.search(r"\bcancel\b", text):
+            action = "cancel"
+        elif "remove" in text:
             action = "remove"
         elif "add" in text or "order" in text:
             action = "add"

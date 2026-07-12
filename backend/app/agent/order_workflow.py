@@ -19,7 +19,6 @@ class OrderWorkflow:
     }
     confirm_words = {"yes", "confirm", "confirmed", "looks good", "place it", "submit it", "go ahead"}
     decline_words = {"no", "not yet", "change", "edit", "wait"}
-    cancel_words = {"cancel order", "clear order", "start over"}
     payment_words = {"pay", "payment", "card", "cash", "mobile", "mobile money", "gift card", "mpesa", "m-pesa"}
     payment_sent_words = {"paid", "sent", "done", "completed", "payment sent"}
     order_history_words = {"previous order", "previous orders", "order history", "last order", "ordered last"}
@@ -578,7 +577,9 @@ class OrderWorkflow:
         return any(word in text for word in self.decline_words)
 
     def _is_cancel(self, text: str) -> bool:
-        return any(word in text for word in self.cancel_words)
+        if "clear order" in text or "start over" in text:
+            return True
+        return bool(re.search(r"\bcancel\b", text))
 
     def _is_remove(self, text: str) -> bool:
         return "remove" in text or "delete" in text

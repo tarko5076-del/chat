@@ -10,7 +10,7 @@ from app.tools.base import BaseTool, ToolResult
 class PaymentTool(BaseTool):
     name = "process_payment"
     description = "Process payment for a submitted order using a supported payment method."
-    supported_methods = ["card", "cash", "mobile_money", "gift_card"]
+    supported_methods = ["card",  "mobile_money", ]
     parameters = {
         "type": "object",
         "properties": {
