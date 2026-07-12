@@ -335,7 +335,7 @@ export function Chat() {
         >
           <span className="chat__hamburger" aria-hidden="true"></span>
         </button>
-        <div className="chat__brand-mark" aria-hidden="true"></div>
+        <div className={`chat__brand-mark ${isLoading ? "chat__brand-mark--thinking" : ""}`} aria-hidden="true"></div>
         <h1 className="chat__title">Resto AI</h1>
         <button
           className="chat__icon-button"

@@ -1,4 +1,3 @@
-tory · CSS
 .history-backdrop {
   position: fixed;
   inset: 0;
@@ -7,12 +6,14 @@ tory · CSS
   background: rgba(3, 7, 8, 0.52);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.24s ease;
+  backdrop-filter: blur(0px);
+  transition: opacity 0.32s ease, backdrop-filter 0.32s ease;
 }
  
 .history-backdrop--open {
   opacity: 1;
   pointer-events: auto;
+  backdrop-filter: blur(2px);
 }
  
 .history-panel {
@@ -30,11 +31,75 @@ tory · CSS
   border-right: 1px solid rgba(205, 231, 235, 0.14);
   box-shadow: 20px 0 60px rgba(0, 0, 0, 0.42);
   transform: translateX(-104%);
-  transition: transform 0.28s ease;
+  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
  
 .history-panel--open {
   transform: translateX(0);
+}
+ 
+/* ── Entrance animations ── */
+ 
+@keyframes historyFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+ 
+.history-panel:not(.history-panel--open) * {
+  animation: none !important;
+}
+ 
+.history-panel--open .history-panel__header,
+.history-panel--open .history-panel__new,
+.history-panel--open .history-panel__section,
+.history-panel--open .history-panel__clear {
+  animation: historyFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+ 
+.history-panel--open .history-panel__header {
+  animation-delay: 0.04s;
+}
+ 
+.history-panel--open .history-panel__new {
+  animation-delay: 0.09s;
+}
+ 
+.history-panel--open .history-panel__section {
+  animation-delay: 0.14s;
+}
+ 
+.history-panel--open .history-panel__clear {
+  animation-delay: 0.2s;
+}
+ 
+.history-panel--open .history-panel__conversation,
+.history-panel--open .history-panel__item {
+  animation: historyFadeUp 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+ 
+.history-panel--open .history-panel__conversation:nth-child(1),
+.history-panel--open .history-panel__item:nth-child(1) { animation-delay: 0.18s; }
+.history-panel--open .history-panel__conversation:nth-child(2),
+.history-panel--open .history-panel__item:nth-child(2) { animation-delay: 0.22s; }
+.history-panel--open .history-panel__conversation:nth-child(3),
+.history-panel--open .history-panel__item:nth-child(3) { animation-delay: 0.26s; }
+.history-panel--open .history-panel__conversation:nth-child(4),
+.history-panel--open .history-panel__item:nth-child(4) { animation-delay: 0.3s; }
+.history-panel--open .history-panel__conversation:nth-child(5),
+.history-panel--open .history-panel__item:nth-child(5) { animation-delay: 0.34s; }
+.history-panel--open .history-panel__conversation:nth-child(n+6),
+.history-panel--open .history-panel__item:nth-child(n+6) { animation-delay: 0.38s; }
+ 
+.history-panel--open .history-panel__conversation--active {
+  animation:
+    historyFadeUp 0.36s cubic-bezier(0.16, 1, 0.3, 1) both,
+    historyActiveGlow 2.6s ease-in-out 0.4s infinite;
 }
  
 /* ── Header row ── */
@@ -86,6 +151,24 @@ tory · CSS
 .history-panel__replay:hover {
   border-color: rgba(67, 231, 247, 0.45);
   transform: translateY(-1px);
+}
+ 
+.history-panel__close:active,
+.history-panel__new:active,
+.history-panel__clear:active,
+.history-panel__delete:active,
+.history-panel__replay:active {
+  transform: translateY(0) scale(0.96);
+  transition: transform 0.1s ease;
+}
+ 
+.history-panel__new {
+  transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease,
+    box-shadow 0.24s ease;
+}
+ 
+.history-panel__new:hover {
+  box-shadow: 0 0 0 5px rgba(18, 228, 244, 0.14);
 }
  
 .history-panel__close {
@@ -157,6 +240,14 @@ tory · CSS
   border: 1px solid rgba(205, 231, 235, 0.12);
   border-radius: 14px;
   background: rgba(21, 29, 31, 0.76);
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease,
+    box-shadow 0.3s ease;
+}
+ 
+.history-panel__conversation:hover {
+  border-color: rgba(205, 231, 235, 0.28);
+  background: rgba(26, 35, 38, 0.85);
+  transform: translateX(2px);
 }
  
 .history-panel__conversation {
@@ -166,9 +257,19 @@ tory · CSS
   flex-shrink: 0;
 }
  
+@keyframes historyActiveGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(67, 231, 247, 0.22);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(67, 231, 247, 0.1);
+  }
+}
+ 
 .history-panel__conversation--active {
   border-color: rgba(67, 231, 247, 0.48);
   border-left: 4px solid rgba(67, 231, 247, 0.72);
+  animation: historyActiveGlow 2.6s ease-in-out infinite;
 }
  
 .history-panel__conversation-main {
@@ -205,6 +306,16 @@ tory · CSS
   font-size: 0.8rem;
   font-weight: 700;
   flex-shrink: 0;
+}
+ 
+@keyframes historyShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+ 
+.history-panel__delete:hover {
+  animation: historyShake 0.28s ease;
 }
  
 /* ── Message items ── */
@@ -301,5 +412,16 @@ tory · CSS
     width: min(480px, 72vw);
     padding: 14px;
     gap: 12px;
+  }
+}
+ 
+@media (prefers-reduced-motion: reduce) {
+  .history-panel,
+  .history-backdrop,
+  .history-panel * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

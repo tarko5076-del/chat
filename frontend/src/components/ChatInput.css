@@ -12,6 +12,15 @@
     0 0 28px rgba(210, 235, 239, 0.08),
     0 14px 34px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.chat-input:focus-within {
+  border-color: rgba(18, 228, 244, 0.55);
+  box-shadow:
+    0 0 32px rgba(18, 228, 244, 0.18),
+    0 14px 34px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .chat-input__field {
