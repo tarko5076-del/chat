@@ -20,7 +20,7 @@ class LocalPlanner:
         if any(word in text for word in ["order", "add", "remove", "cart"]):
             return [{"tool": "manage_order", "args": self._order_args(message, memory)}]
 
-        if "menu" in text or "recommend" in text or "vegetarian" in text or "vegan" in text:
+        if "menu" in text or "recommend" in text or "vegetarian" in text or "vegan" in text or "spicy" in text:
             return [{"tool": "list_menu_items", "args": self._menu_args(text)}]
 
         if "bill" in text or "total" in text or "split" in text:

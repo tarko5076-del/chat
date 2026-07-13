@@ -63,8 +63,14 @@ class OrderWorkflow:
             return await self._handle_payment(text, memory)
 
         lookup = self._lookup_menu_request(text, memory)
-        if self._is_menu_request(text) and not lookup.get("item") and not lookup.get("requested_name"):
-            return None
+        if self._is_menu_request(text):
+            if not lookup.get("item") and not lookup.get("requested_name"):
+                return None
+            if lookup.get("requested_name") and not lookup.get("item"):
+                return None
+            is_menu_browse = any(w in text for w in ["what", "show", "list", "have", "any", "all", "tell me"])
+            if is_menu_browse and not self._has_quantity(text):
+                return None
         if not self._should_handle_order(text, memory, lookup):
             return None
         return await self._handle_order(message, text, memory, lookup)
@@ -655,6 +661,14 @@ class OrderWorkflow:
         return next((word for word in categories if word in text), None)
 
     def _requested_item_name(self, text: str) -> str | None:
+        reservation_words = {"reserve", "reservation", "book", "booking", "table", "seat", "seating"}
+        order_keywords = {"order", "add", "get me", "can i get", "i'd like", "id like", "i want"}
+        has_order_keyword = any(kw in text.lower() for kw in order_keywords)
+        has_reservation_context = any(w in text.lower() for w in reservation_words)
+
+        if has_reservation_context and not has_order_keyword:
+            return None
+
         patterns = [
             r"(?:i want|i'd like|id like|order|add|get me|can i get)\s+(?:\d+\s+|one\s+|two\s+|three\s+)?(.+)",
             r"do you have\s+(.+)",
@@ -666,7 +680,9 @@ class OrderWorkflow:
             value = match.group(1)
             value = re.split(r"\b(?:for|with|and|please|to go|pickup|delivery)\b", value, maxsplit=1)[0]
             value = re.sub(r"[^a-z0-9 '&-]", "", value, flags=re.I).strip()
-            if value and value not in {"food", "new food", "something", "something new", "a table"}:
+            if value and value not in {"food", "new food", "something", "something new", "a table", "a table for"}:
+                if any(w in value.lower() for w in reservation_words):
+                    continue
                 return " ".join(part.capitalize() for part in value.split())
         return None
 
@@ -681,6 +697,8 @@ class OrderWorkflow:
             "menu",
             "recommend",
             "reservation",
+            "reserve",
+            "booking",
             "table",
             "book",
             "hours",

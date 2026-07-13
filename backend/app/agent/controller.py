@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from openai import OpenAIError
@@ -6,9 +7,12 @@ from app.agent.memory import ConversationMemory
 from app.agent.order_workflow import OrderWorkflow
 from app.agent.planner import LocalPlanner
 from app.agent.prompts import system_prompt
-from app.llm.client import LLMClient, tool_arguments
+from app.agent.react import ReActLoop
+from app.llm.client import LLMClient
 from app.tools import BillingTool, FAQTool, MenuTool, OrderTool, PaymentTool, ReservationTool
 from app.tools.base import BaseTool, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 class RestaurantAgent:
@@ -16,6 +20,7 @@ class RestaurantAgent:
         self.tools = self._build_tools()
         self.llm = LLMClient()
         self.planner = LocalPlanner()
+        self.react = ReActLoop(self.llm, self.tools)
         self.order_workflow = OrderWorkflow(self)
 
     async def run(
@@ -37,48 +42,43 @@ class RestaurantAgent:
 
         if self.llm.enabled:
             try:
-                response = await self._run_with_llm(message, history or [], memory)
+                response = await self._run_with_react(message, history or [], memory)
             except OpenAIError:
+                logger.warning("LLM call failed, falling back to local planner")
                 response = await self._run_locally(message, memory)
             except Exception:
+                logger.exception("Unexpected error in ReAct loop, falling back to local planner")
                 response = await self._run_locally(message, memory)
         else:
             response = await self._run_locally(message, memory)
+
         memory.remember_message(response)
         return response
 
-    async def _run_with_llm(
+    async def _run_with_react(
         self,
         message: str,
         history: list[dict],
         memory: ConversationMemory,
     ) -> str:
-        messages: list[dict[str, Any]] = [
+        system_messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt()},
             {"role": "system", "content": f"Conversation memory: {memory.as_context()}"},
             *history[-12:],
-            {"role": "user", "content": message},
         ]
 
-        for _ in range(4):
-            response = await self.llm.complete_with_tools(
-                messages,
-                [tool.to_openai_tool() for tool in self.tools.values()],
-            )
-            assistant = response.choices[0].message
-            messages.append(assistant.model_dump(exclude_none=True))
-            if not assistant.tool_calls:
-                return assistant.content or "I handled that, but I do not have more detail."
-            for call in assistant.tool_calls:
-                result = await self._execute_tool(
-                    call.function.name,
-                    tool_arguments(call.function.arguments),
-                    memory,
+        result = await self.react.run(system_messages, message, memory)
+
+        for step in result.steps:
+            if step.tool_name:
+                logger.info(
+                    "ReAct step %d: tool=%s success=%s",
+                    step.iteration,
+                    step.tool_name,
+                    step.tool_success,
                 )
-                messages.append(
-                    {"role": "tool", "tool_call_id": call.id, "content": result.to_llm_content()}
-                )
-        return "I used several tools, but I need one more detail to finish that request."
+
+        return result.response
 
     async def _run_locally(self, message: str, memory: ConversationMemory) -> str:
         plan = self.planner.plan(message, memory)
