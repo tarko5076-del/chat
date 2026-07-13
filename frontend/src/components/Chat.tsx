@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Message as MessageComponent } from "./Message";
 import { ChatInput } from "./ChatInput";
 import { ChatHistory } from "./ChatHistory";
-import { sendMessage } from "../services/api";
+import { sendMessageStream } from "../services/api";
 import type { Conversation, Message, ChatHistoryMessage } from "../types/chat";
 import "./Chat.css";
 import "./ChatResponsive.css";
@@ -19,9 +19,25 @@ const conversationsStorageKey = "resto-chat-conversations";
 const activeConversationStorageKey = "resto-active-conversation";
 const maxStoredMessages = 120;
 
+const toolDisplayNames: Record<string, string> = {
+  list_menu_items: "Looking up menu",
+  manage_reservation: "Checking reservation",
+  manage_order: "Managing order",
+  calculate_bill: "Calculating bill",
+  answer_faq: "Looking up information",
+  process_payment: "Processing payment",
+};
+
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string;
+}
+
+interface StreamingState {
+  isStreaming: boolean;
+  content: string;
+  status: string;
+  abort: (() => void) | null;
 }
 
 function createConversation(messages: Message[] = []): Conversation {
@@ -152,26 +168,27 @@ function initializeChatState(): ChatState {
   };
 }
 
-/**
- * Main chat container that holds the message history and manages
- * communication with the backend API.
- */
 export function Chat() {
   const [{ conversations, activeConversationId }, setChatState] =
     useState<ChatState>(initializeChatState);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [streaming, setStreaming] = useState<StreamingState>({
+    isStreaming: false,
+    content: "",
+    status: "",
+    abort: null,
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeConversation =
     conversations.find((conversation) => conversation.id === activeConversationId) ??
     conversations[0];
   const messages = activeConversation?.messages ?? [];
 
-  /** Auto-scroll to the latest message. */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streaming.content]);
 
   useEffect(() => {
     const conversationsForStorage = conversations.map((conversation) => ({
@@ -204,6 +221,7 @@ export function Chat() {
     const conversation = createConversation();
     setError(null);
     setIsHistoryOpen(false);
+    setStreaming({ isStreaming: false, content: "", status: "", abort: null });
     setChatState((current) => ({
       conversations: [conversation, ...current.conversations],
       activeConversationId: conversation.id,
@@ -213,6 +231,7 @@ export function Chat() {
   function selectConversation(conversationId: string) {
     setError(null);
     setIsHistoryOpen(false);
+    setStreaming({ isStreaming: false, content: "", status: "", abort: null });
     setChatState((current) => ({
       ...current,
       activeConversationId: conversationId,
@@ -225,11 +244,13 @@ export function Chat() {
     }
 
     setError(null);
+    setStreaming({ isStreaming: false, content: "", status: "", abort: null });
     updateConversationMessages(activeConversation.id, []);
   }
 
   function deleteConversation(conversationId: string) {
     setError(null);
+    setStreaming({ isStreaming: false, content: "", status: "", abort: null });
     setChatState((current) => {
       const remainingConversations = current.conversations.filter(
         (conversation) => conversation.id !== conversationId,
@@ -261,6 +282,7 @@ export function Chat() {
 
     const conversation = createConversation();
     setError(null);
+    setStreaming({ isStreaming: false, content: "", status: "", abort: null });
     setChatState({
       conversations: [conversation],
       activeConversationId: conversation.id,
@@ -268,49 +290,96 @@ export function Chat() {
     localStorage.removeItem(legacyStorageKey);
   }
 
-  async function handleSend(userMessage: string) {
-    if (!activeConversation) {
-      return;
-    }
+  const handleSend = useCallback(
+    function handleSend(userMessage: string) {
+      if (!activeConversation) {
+        return;
+      }
 
-    const conversationId = activeConversation.id;
-    const historySource = activeConversation.messages;
-    setError(null);
-    setIsHistoryOpen(false);
+      const conversationId = activeConversation.id;
+      const historySource = activeConversation.messages;
+      setError(null);
+      setIsHistoryOpen(false);
 
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: userMessage,
-      timestamp: new Date(),
-    };
+      const userMsg: Message = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: userMessage,
+        timestamp: new Date(),
+      };
 
-    updateConversationMessages(conversationId, [...historySource, userMsg]);
-    setIsLoading(true);
+      updateConversationMessages(conversationId, [...historySource, userMsg]);
+      setIsLoading(true);
+      setStreaming({ isStreaming: true, content: "", status: "Thinking...", abort: null });
 
-    try {
       const history: ChatHistoryMessage[] = historySource.map((msg) => ({
         role: msg.role,
         content: msg.content,
       }));
 
-      const response = await sendMessage(userMessage, history, conversationId);
+      const abort = sendMessageStream(userMessage, history, conversationId, {
+        onToken(content) {
+          setStreaming((prev) => ({
+            ...prev,
+            content: prev.content + content,
+            status: "",
+          }));
+        },
+        onThinking(content) {
+          setStreaming((prev) => ({
+            ...prev,
+            status: content,
+          }));
+        },
+        onToolStart(tool) {
+          const displayName = toolDisplayNames[tool] ?? "Processing";
+          setStreaming((prev) => ({
+            ...prev,
+            status: `${displayName}...`,
+          }));
+        },
+        onToolResult(_tool, _success, _message) {
+          setStreaming((prev) => ({
+            ...prev,
+            status: "",
+          }));
+        },
+        onDone(response, convId) {
+          const assistantMsg: Message = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: response,
+            timestamp: new Date(),
+          };
 
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: response.response,
-        timestamp: new Date(),
-      };
+          if (convId && convId !== conversationId) {
+            setChatState((current) => ({
+              ...current,
+              activeConversationId: convId,
+            }));
+          }
 
-      updateConversationMessages(conversationId, [...historySource, userMsg, assistantMsg]);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "An unexpected error occurred.";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+          updateConversationMessages(
+            convId || conversationId,
+            [...historySource, userMsg, assistantMsg],
+          );
+          setStreaming({ isStreaming: false, content: "", status: "", abort: null });
+          setIsLoading(false);
+        },
+        onError(detail) {
+          setError(detail);
+          setStreaming({ isStreaming: false, content: "", status: "", abort: null });
+          setIsLoading(false);
+        },
+      });
+
+      setStreaming((prev) => ({ ...prev, abort }));
+    },
+    [activeConversation],
+  );
+
+  const isStreamActive = streaming.isStreaming && streaming.content.length > 0;
+  const isStreamThinking = streaming.isStreaming && streaming.content.length === 0;
 
   return (
     <div className="chat">
@@ -342,14 +411,14 @@ export function Chat() {
           type="button"
           aria-label="Clear chat"
           onClick={clearCurrentConversation}
-          disabled={messages.length === 0}
+          disabled={messages.length === 0 && !isStreamActive}
         >
           <span className="chat__kebab" aria-hidden="true"></span>
         </button>
       </header>
 
       <div className="chat__messages">
-        {messages.length === 0 && (
+        {messages.length === 0 && !isStreamActive && !isStreamThinking && (
           <div className="chat__welcome">
             <div className="chat__welcome-label">RESTO CORE</div>
             <div className="chat__welcome-bubble">
@@ -363,12 +432,41 @@ export function Chat() {
           <MessageComponent key={msg.id} message={msg} />
         ))}
 
-        {isLoading && (
-          <div className="chat__loading">
-            <div className="chat__typing-indicator">
-              <span></span>
-              <span></span>
-              <span></span>
+        {isStreamThinking && (
+          <div className="message message--assistant">
+            <div className="message__stack">
+              <div className="message__meta">
+                <span className="message__label">RESTO CORE</span>
+              </div>
+              <div className="message__bubble message__bubble--thinking">
+                <div className="chat__typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                {streaming.status && (
+                  <div className="message__status">{streaming.status}</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isStreamActive && (
+          <div className="message message--assistant">
+            <div className="message__stack">
+              <div className="message__meta">
+                <span className="message__label">RESTO CORE</span>
+                <time>now</time>
+              </div>
+              <div className="message__bubble">
+                <p className="message__text">{streaming.content}</p>
+                {streaming.status && (
+                  <div className="message__status message__status--inline">
+                    {streaming.status}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

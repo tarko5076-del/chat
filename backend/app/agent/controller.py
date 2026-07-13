@@ -1,5 +1,6 @@
+import json
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 
 from openai import OpenAIError
 
@@ -55,6 +56,41 @@ class RestaurantAgent:
         memory.remember_message(response)
         return response
 
+    async def run_stream(
+        self,
+        message: str,
+        history: list[dict] | None = None,
+        memory: ConversationMemory | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Streaming version of run(). Yields SSE events."""
+        if not message.strip():
+            raise ValueError("Message cannot be empty.")
+
+        memory = memory or ConversationMemory.from_history(history)
+        memory.remember_user_message(message)
+
+        workflow_response = await self.order_workflow.handle(message, memory)
+        if workflow_response:
+            memory.remember_message(workflow_response)
+            yield {"type": "token", "content": workflow_response}
+            yield {"type": "done", "response": workflow_response, "steps": 0}
+            return
+
+        if self.llm.enabled:
+            try:
+                async for event in self._run_with_react_stream(message, history or [], memory):
+                    yield event
+                return
+            except OpenAIError:
+                logger.warning("LLM call failed, falling back to local planner")
+            except Exception:
+                logger.exception("Unexpected error in ReAct stream, falling back to local planner")
+
+        response = await self._run_locally(message, memory)
+        memory.remember_message(response)
+        yield {"type": "token", "content": response}
+        yield {"type": "done", "response": response, "steps": 0}
+
     async def _run_with_react(
         self,
         message: str,
@@ -79,6 +115,28 @@ class RestaurantAgent:
                 )
 
         return result.response
+
+    async def _run_with_react_stream(
+        self,
+        message: str,
+        history: list[dict],
+        memory: ConversationMemory,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Streaming version of _run_with_react."""
+        system_messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt()},
+            {"role": "system", "content": f"Conversation memory: {memory.as_context()}"},
+            *history[-12:],
+        ]
+
+        final_response = ""
+        async for event in self.react.run_stream(system_messages, message, memory):
+            if event["type"] == "done":
+                final_response = event["response"]
+            yield event
+
+        if final_response:
+            memory.remember_message(final_response)
 
     async def _run_locally(self, message: str, memory: ConversationMemory) -> str:
         plan = self.planner.plan(message, memory)

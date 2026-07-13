@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 
 from openai import AsyncOpenAI
 
@@ -11,9 +11,6 @@ logger = logging.getLogger(__name__)
 
 class LLMClient:
     def __init__(self) -> None:
-        # Only enable the LLM when an OpenAI-compatible API key is explicitly provided.
-        # Hugging Face tokens will use the keyword-based local planner instead,
-        # which is more reliable for tool selection than smaller HF models.
         self.enabled = bool(settings.openai_api_key)
         self.model = settings.llm_model
         self.client = self._build_client() if self.enabled else None
@@ -38,6 +35,30 @@ class LLMClient:
             tool_choice="auto",
             temperature=0.2,
         )
+
+    async def complete_with_tools_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> AsyncIterator[dict[str, Any]]:
+        if not self.client:
+            raise ValueError("No LLM API key configured.")
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.2,
+            stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta:
+                yield {
+                    "chunk": chunk,
+                    "delta": delta,
+                    "finish_reason": chunk.choices[0].finish_reason if chunk.choices else None,
+                }
 
 
 def tool_arguments(raw: str | None) -> dict[str, Any]:

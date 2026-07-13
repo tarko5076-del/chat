@@ -42,3 +42,13 @@ export interface ChatResponse {
 export interface ApiError {
   detail: string;
 }
+
+/** SSE streaming event types from the backend. */
+export type StreamEvent =
+  | { type: "token"; content: string }
+  | { type: "thinking"; content: string }
+  | { type: "tool_start"; tool: string; args: Record<string, unknown> }
+  | { type: "tool_result"; tool: string; success: boolean; message: string }
+  | { type: "done"; response: string; steps: number }
+  | { type: "conversation_id"; conversation_id: string }
+  | { type: "error"; detail: string };

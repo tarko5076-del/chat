@@ -92,6 +92,38 @@
   word-break: break-word;
 }
 
+.message__bubble--thinking {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.message__status {
+  color: #7fb8bc;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  animation: statusFade 0.3s ease;
+}
+
+.message__status--inline {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(205, 231, 235, 0.1);
+}
+
+@keyframes statusFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes messageIn {
   from {
     opacity: 0;
