@@ -2,7 +2,7 @@ import re
 from typing import Any
 
 from agent.memory import ConversationMemory, empty_order_state
-from app.core.config import TAX_RATE, DELIVERY_FEE
+from config.settings import TAX_RATE, DELIVERY_FEE
 from menu.models import MenuItem
 from agent.utils import words as _words, cuisine_hint_words as _cuisine_hint_words
 

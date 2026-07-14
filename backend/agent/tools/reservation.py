@@ -1,16 +1,19 @@
-from datetime import date, time
+from datetime import date, time, timedelta
+
+from django.db import transaction
+from django.utils import timezone
 
 from agent.tools.base import BaseTool, ToolResult
-from reservations.models import Reservation, MAX_PARTY_SIZE, MAX_RESERVATIONS_PER_SLOT, OPENING_HOUR, CLOSING_HOUR
+from reservations.models import Reservation, MAX_PARTY_SIZE, MAX_RESERVATIONS_PER_SLOT, OPENING_HOUR, CLOSING_HOUR, RESERVATION_HOLD_MINUTES
 
 
 class ReservationTool(BaseTool):
     name = "manage_reservation"
-    description = "Check, create, update, cancel, or list restaurant reservations."
+    description = "Check, create, confirm, update, cancel, or list restaurant reservations."
     parameters = {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["check", "create", "update", "cancel", "list"]},
+            "action": {"type": "string", "enum": ["check", "create", "confirm", "update", "cancel", "list"]},
             "reservation_id": {"type": "integer"},
             "customer_name": {"type": "string"},
             "phone": {"type": "string"},
@@ -32,6 +35,8 @@ class ReservationTool(BaseTool):
                 return self._check_availability(kwargs)
             if action == "create":
                 return self._create_reservation(kwargs)
+            if action == "confirm":
+                return self._confirm_reservation(kwargs)
             if action == "update":
                 return self._update_reservation(kwargs)
             if action == "cancel":
@@ -53,6 +58,10 @@ class ReservationTool(BaseTool):
         res_date = date.fromisoformat(kwargs["reservation_date"])
         res_time = time.fromisoformat(kwargs["reservation_time"])
         party_size = int(kwargs.get("party_size") or 2)
+
+        # Auto-release expired holds for this slot
+        self._release_expired_holds(res_date, res_time)
+
         available, reason = self._slot_available(res_date, res_time, party_size)
         if available:
             return ToolResult(
@@ -89,6 +98,10 @@ class ReservationTool(BaseTool):
         res_date = date.fromisoformat(kwargs["reservation_date"])
         res_time = time.fromisoformat(kwargs["reservation_time"])
         party_size = int(kwargs["party_size"])
+
+        # Auto-release expired holds for this slot
+        self._release_expired_holds(res_date, res_time)
+
         available, reason = self._slot_available(res_date, res_time, party_size)
         if not available:
             return ToolResult(
@@ -102,6 +115,7 @@ class ReservationTool(BaseTool):
                 },
                 next_action="ask_user",
             )
+        now = timezone.now()
         reservation = Reservation(
             customer_name=kwargs["customer_name"],
             phone=kwargs["phone"],
@@ -109,6 +123,8 @@ class ReservationTool(BaseTool):
             reservation_date=res_date,
             reservation_time=res_time,
             party_size=party_size,
+            status="held",
+            held_until=now + timedelta(minutes=RESERVATION_HOLD_MINUTES),
         )
         reservation.save()
         memory_updates = {
@@ -123,9 +139,11 @@ class ReservationTool(BaseTool):
         return ToolResult(
             success=True,
             message=(
-                f"Reservation confirmed! ID: {reservation.id}. {reservation.customer_name}, "
+                f"Reservation held! ID: {reservation.id}. {reservation.customer_name}, "
                 f"{reservation.party_size} guests on {reservation.reservation_date} "
-                f"at {reservation.reservation_time.strftime('%H:%M')}."
+                f"at {reservation.reservation_time.strftime('%H:%M')}. "
+                f"This hold expires in {RESERVATION_HOLD_MINUTES} minutes. "
+                f"Please confirm the reservation to secure your table."
             ),
             data={"reservation": reservation.to_dict()},
             memory_updates=memory_updates,
@@ -172,6 +190,86 @@ class ReservationTool(BaseTool):
                 "reservation_time": reservation.reservation_time.strftime("%H:%M"),
                 "party_size": reservation.party_size,
             },
+        )
+
+    def _confirm_reservation(self, kwargs):
+        reservation_id = kwargs.get("reservation_id")
+        if not reservation_id:
+            return self._missing_result(["reservation_id"])
+
+        # select_for_update prevents concurrent double-booking
+        with transaction.atomic():
+            reservation = (
+                Reservation.objects
+                .select_for_update()
+                .filter(id=reservation_id)
+                .first()
+            )
+            if not reservation:
+                return ToolResult(
+                    success=False,
+                    message=f"Reservation with ID {reservation_id} was not found.",
+                    next_action="ask_user",
+                )
+
+            if reservation.is_held_expired:
+                reservation.status = "cancelled"
+                reservation.save(update_fields=["status"])
+                return ToolResult(
+                    success=False,
+                    message=(
+                        f"Reservation {reservation_id} has expired. "
+                        f"Holds are released after {RESERVATION_HOLD_MINUTES} minutes. "
+                        f"Would you like to create a new reservation?"
+                    ),
+                    data={"reservation_id": reservation_id, "status": "cancelled"},
+                    next_action="ask_user",
+                )
+
+            if reservation.status == "confirmed":
+                return ToolResult(
+                    success=True,
+                    message=f"Reservation {reservation_id} is already confirmed.",
+                    data={"reservation": reservation.to_dict()},
+                )
+
+            if reservation.status not in ("held",):
+                return ToolResult(
+                    success=False,
+                    message=f"Cannot confirm reservation in '{reservation.status}' status.",
+                    data={"reservation_id": reservation_id, "status": reservation.status},
+                    next_action="ask_user",
+                )
+
+            # Check slot capacity again with lock held
+            self._release_expired_holds(reservation.reservation_date, reservation.reservation_time)
+            available, reason = self._slot_available(
+                reservation.reservation_date,
+                reservation.reservation_time,
+                reservation.party_size,
+                exclude_reservation_id=reservation.id,
+            )
+            if not available:
+                return ToolResult(
+                    success=False,
+                    message=f"Cannot confirm: {reason}",
+                    data={"reservation_id": reservation_id},
+                    next_action="ask_user",
+                )
+
+            reservation.status = "confirmed"
+            reservation.held_until = None
+            reservation.save(update_fields=["status", "held_until"])
+
+        return ToolResult(
+            success=True,
+            message=(
+                f"Reservation {reservation.id} confirmed! {reservation.customer_name}, "
+                f"{reservation.party_size} guests on {reservation.reservation_date} "
+                f"at {reservation.reservation_time.strftime('%H:%M')}."
+            ),
+            data={"reservation": reservation.to_dict()},
+            memory_updates={"reservation_id": reservation.id},
         )
 
     def _cancel_reservation(self, kwargs):
@@ -255,7 +353,7 @@ class ReservationTool(BaseTool):
         query = Reservation.objects.filter(
             reservation_date=reservation_date,
             reservation_time=reservation_time,
-            status="confirmed",
+            status__in=["confirmed", "held"],
         )
         if exclude_reservation_id:
             query = query.exclude(id=exclude_reservation_id)
@@ -266,3 +364,20 @@ class ReservationTool(BaseTool):
                 f"at {reservation_time.strftime('%H:%M')}."
             )
         return True, "Available."
+
+    def _release_expired_holds(self, reservation_date, reservation_time):
+        """Release all expired held reservations for a given slot."""
+        now = timezone.now()
+        expired = Reservation.objects.filter(
+            reservation_date=reservation_date,
+            reservation_time=reservation_time,
+            status="held",
+            held_until__lte=now,
+        )
+        count = expired.update(status="cancelled")
+        if count:
+            from reservations.models import logger as reservations_logger
+            reservations_logger.info(
+                "Released %d expired holds for %s %s",
+                count, reservation_date, reservation_time,
+            )

@@ -21,9 +21,10 @@ class ReservationSerializer(serializers.ModelSerializer):
             "reservation_time",
             "party_size",
             "status",
+            "held_until",
             "created_at",
         ]
-        read_only_fields = ["id", "status", "created_at"]
+        read_only_fields = ["id", "status", "held_until", "created_at"]
 
 
 class ReservationCreateSerializer(serializers.Serializer):
