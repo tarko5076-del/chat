@@ -93,6 +93,23 @@
   opacity: 0.4;
 }
 
+.chat__avatar-button {
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.chat__avatar-initial {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(18, 228, 244, 0.7), rgba(129, 18, 166, 0.7));
+  color: #0b1112;
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+
 .chat__hamburger,
 .chat__hamburger::before,
 .chat__hamburger::after {

@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useAppSelector } from "../hooks";
 import { Message as MessageComponent } from "./Message";
 import { ChatInput } from "./ChatInput";
 import { ChatHistory } from "./ChatHistory";
+import { Sidebar } from "./Sidebar";
 import { sendMessageStream } from "../services/api";
 import type { Conversation, Message, ChatHistoryMessage } from "../types/chat";
 import "./Chat.css";
@@ -172,6 +174,7 @@ export function Chat() {
   const [{ conversations, activeConversationId }, setChatState] =
     useState<ChatState>(initializeChatState);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streaming, setStreaming] = useState<StreamingState>({
@@ -181,6 +184,7 @@ export function Chat() {
     abort: null,
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const user = useAppSelector((s) => s.auth.user);
   const activeConversation =
     conversations.find((conversation) => conversation.id === activeConversationId) ??
     conversations[0];
@@ -236,16 +240,6 @@ export function Chat() {
       ...current,
       activeConversationId: conversationId,
     }));
-  }
-
-  function clearCurrentConversation() {
-    if (!activeConversation) {
-      return;
-    }
-
-    setError(null);
-    setStreaming({ isStreaming: false, content: "", status: "", abort: null });
-    updateConversationMessages(activeConversation.id, []);
   }
 
   function deleteConversation(conversationId: string) {
@@ -395,6 +389,7 @@ export function Chat() {
         onClearAll={clearAllConversations}
         onReplay={handleSend}
       />
+      <Sidebar open={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <header className="chat__header">
         <button
           className="chat__icon-button"
@@ -407,13 +402,13 @@ export function Chat() {
         <div className={`chat__brand-mark ${isLoading ? "chat__brand-mark--thinking" : ""}`} aria-hidden="true"></div>
         <h1 className="chat__title">Resto AI</h1>
         <button
-          className="chat__icon-button"
+          className="chat__icon-button chat__avatar-button"
           type="button"
-          aria-label="Clear chat"
-          onClick={clearCurrentConversation}
-          disabled={messages.length === 0 && !isStreamActive}
+          aria-label="Open menu & orders"
+          onClick={() => setIsSidebarOpen(true)}
+          title={user?.username ?? "Menu"}
         >
-          <span className="chat__kebab" aria-hidden="true"></span>
+          <span className="chat__avatar-initial">{user?.username?.[0]?.toUpperCase() ?? "?"}</span>
         </button>
       </header>
 
