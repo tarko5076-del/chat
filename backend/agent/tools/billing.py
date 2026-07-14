@@ -14,7 +14,7 @@ class BillingTool(BaseTool):
         },
     }
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         order = self._find_order(kwargs)
         if not order:
             return ToolResult(

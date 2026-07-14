@@ -24,7 +24,7 @@ class EscalationTool(BaseTool):
         "required": ["reason"],
     }
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         reason = kwargs.get("reason", "No reason provided.")
         priority = kwargs.get("priority", "medium")
 

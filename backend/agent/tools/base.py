@@ -38,7 +38,7 @@ class BaseTool(ABC):
     parameters = {}
 
     @abstractmethod
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         ...
 
     def to_openai_tool(self):

@@ -6,7 +6,7 @@ from agent.models import KnowledgeBase
 logger = logging.getLogger(__name__)
 
 
-async def search_knowledge(
+def search_knowledge(
     query: str,
     content_type: str | None = None,
     top_k: int = 5,
@@ -15,7 +15,7 @@ async def search_knowledge(
 
     Returns list of dicts with title, content, content_type, score.
     """
-    query_embedding = await get_embedding(query)
+    query_embedding = get_embedding(query)
 
     qs = KnowledgeBase.objects.filter(is_active=True)
 

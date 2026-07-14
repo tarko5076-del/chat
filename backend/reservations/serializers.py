@@ -1,7 +1,9 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
     MAX_PARTY_SIZE,
+    MAX_RESERVATIONS_PER_SLOT,
     OPENING_HOUR,
     CLOSING_HOUR,
     Reservation,

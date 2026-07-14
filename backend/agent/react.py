@@ -5,6 +5,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, TYPE_CHECKING
 
+from asgiref.sync import sync_to_async
+
 from agent.goals import GoalStack
 from agent.memory import ConversationMemory
 from agent.llm import LLMClient, tool_arguments
@@ -338,7 +340,7 @@ class ReActLoop:
                 message=f"Tool '{name}' is not available.",
             )
         start_time = time.monotonic()
-        result = await tool.execute(**args)
+        result = await sync_to_async(tool.execute)(**args)
         duration_ms = int((time.monotonic() - start_time) * 1000)
         memory.remember_tool_result(result)
         logger.info(

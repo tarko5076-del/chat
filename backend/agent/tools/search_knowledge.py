@@ -29,7 +29,7 @@ class SearchKnowledgeTool(BaseTool):
         "required": ["query"],
     }
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         query = kwargs.get("query", "").strip()
         if not query:
             return ToolResult(
@@ -42,7 +42,7 @@ class SearchKnowledgeTool(BaseTool):
         content_type = kwargs.get("content_type")
         top_k = kwargs.get("top_k", 5)
 
-        results = await search_knowledge(query, content_type=content_type, top_k=top_k)
+        results = search_knowledge(query, content_type=content_type, top_k=top_k)
 
         if not results:
             return ToolResult(

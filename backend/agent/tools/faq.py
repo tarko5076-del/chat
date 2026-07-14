@@ -19,7 +19,7 @@ class FAQTool(BaseTool):
         "payment": "We accept cash, major cards, contactless payments, and gift cards.",
     }
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         text = kwargs.get("question", "").lower()
         if "hour" in text or "open" in text:
             return self._answer("hours")

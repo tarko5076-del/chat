@@ -7,7 +7,6 @@ from .models import Payment
 
 class PaymentSerializer(serializers.ModelSerializer):
     order_id = serializers.IntegerField(source="order.id", read_only=True)
-    total = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
@@ -26,9 +25,6 @@ class PaymentSerializer(serializers.ModelSerializer):
             "transaction_ref",
             "created_at",
         ]
-
-    def get_total(self, obj):
-        return float(obj.amount) if obj.amount else None
 
 
 class PaymentCreateSerializer(serializers.Serializer):

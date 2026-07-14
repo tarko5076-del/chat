@@ -49,7 +49,7 @@ class OrderTool(BaseTool):
         "required": ["action"],
     }
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         action = kwargs["action"]
         if action == "history":
             return self._order_history(kwargs)

@@ -17,7 +17,7 @@ class MenuTool(BaseTool):
         },
     }
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         from django.db.models import Q
 
         query = MenuItem.objects.filter(available=True)

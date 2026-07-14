@@ -28,7 +28,7 @@ class ReservationTool(BaseTool):
     opening_time = time(OPENING_HOUR, 0)
     closing_time = time(CLOSING_HOUR, 0)
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         action = kwargs["action"]
         try:
             if action == "check":

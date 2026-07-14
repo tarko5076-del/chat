@@ -2,6 +2,8 @@ import json
 import logging
 from typing import Any, AsyncIterator
 
+from asgiref.sync import sync_to_async
+
 from agent.llm import LLMClient
 from agent.memory import ConversationMemory
 from agent.memory_manager import MemoryManager
@@ -304,7 +306,7 @@ class RestaurantAgent:
         tool = self.tools.get(name)
         if not tool:
             return ToolResult(success=False, message=f"Tool '{name}' is not available.")
-        result = await tool.execute(**args)
+        result = await sync_to_async(tool.execute)(**args)
         memory.remember_tool_result(result)
         return result
 
@@ -353,7 +355,7 @@ class RestaurantAgent:
     async def _retrieve_rag_context(self, message: str) -> str:
         """Auto-retrieve relevant knowledge for the user's message."""
         try:
-            results = await search_knowledge(message, top_k=3)
+            results = search_knowledge(message, top_k=3)
             return format_knowledge_context(results)
         except Exception:
             logger.debug("RAG retrieval failed", exc_info=True)

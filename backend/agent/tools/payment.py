@@ -26,7 +26,7 @@ class PaymentTool(BaseTool):
         "required": ["order_id", "payment_method"],
     }
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         missing = [field for field in ["order_id", "payment_method"] if not kwargs.get(field)]
         if missing:
             return ToolResult(

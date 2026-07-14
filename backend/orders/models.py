@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 
 
@@ -50,11 +52,11 @@ class Order(models.Model):
 
     @property
     def delivery_fee(self):
-        return 4.99 if self.delivery_method == "delivery" else 0.00
+        return Decimal("4.99") if self.delivery_method == "delivery" else Decimal("0.00")
 
     @property
     def total(self):
-        return round(self.subtotal * 1.0825 + self.delivery_fee, 2)
+        return round(self.subtotal * Decimal("1.0825") + self.delivery_fee, 2)
 
     def to_dict(self):
         return {

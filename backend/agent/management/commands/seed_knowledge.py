@@ -1,5 +1,3 @@
-import asyncio
-
 from django.core.management.base import BaseCommand
 
 from agent.embeddings import get_embeddings
@@ -109,9 +107,9 @@ class Command(BaseCommand):
     help = "Seed knowledge base with menu items, policies, FAQs, and promotions"
 
     def handle(self, *args, **options):
-        asyncio.run(self._seed())
+        self._seed()
 
-    async def _seed(self):
+    def _seed(self):
         self.stdout.write("Seeding knowledge base...")
 
         items = []
@@ -157,7 +155,7 @@ class Command(BaseCommand):
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
             self.stdout.write(f"  Embedding batch {i // batch_size + 1}...")
-            embeddings = await get_embeddings(batch)
+            embeddings = get_embeddings(batch)
             all_embeddings.extend(embeddings)
 
         # Clear existing and insert
