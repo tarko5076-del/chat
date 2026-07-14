@@ -95,3 +95,48 @@ class KnowledgeBase(models.Model):
         indexes = [
             GinIndex(fields=["embedding"], name="knowledge_embedding_idx", opclasses=["vector_l2_ops"]),
         ]
+
+
+class StaffNotification(models.Model):
+    PRIORITY_CHOICES = [
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+    ]
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("acknowledged", "Acknowledged"),
+        ("resolved", "Resolved"),
+    ]
+
+    customer_id = models.CharField(max_length=255, db_index=True)
+    customer_name = models.CharField(max_length=255, blank=True, default="")
+    conversation_id = models.CharField(max_length=255, blank=True, default="")
+    reason = models.TextField()
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="medium")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    staff_notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "priority"]),
+        ]
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "customer_id": self.customer_id,
+            "customer_name": self.customer_name,
+            "conversation_id": self.conversation_id,
+            "reason": self.reason,
+            "priority": self.priority,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "acknowledged_at": self.acknowledged_at.isoformat() if self.acknowledged_at else None,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+            "staff_notes": self.staff_notes,
+        }

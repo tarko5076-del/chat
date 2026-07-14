@@ -352,7 +352,7 @@ class ReActLoop:
         start_time = time.monotonic()
         result = await sync_to_async(tool.execute)(**args)
         duration_ms = int((time.monotonic() - start_time) * 1000)
-        memory.remember_tool_result(result)
+        memory.remember_tool_result(result, tool_name=name)
         logger.info(
             "ReAct tool=%s success=%s duration_ms=%d",
             name,

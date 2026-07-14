@@ -1,6 +1,7 @@
 import json
 
 from asgiref.sync import async_to_sync
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -162,3 +163,48 @@ class CustomerMemoryView(APIView):
                 {"detail": f"Failed to load memory: {str(error)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class StaffNotificationView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from agent.models import StaffNotification
+
+        status_filter = request.query_params.get("status", "pending")
+        notifications = StaffNotification.objects.filter(status=status_filter)[:50]
+        return Response({
+            "count": StaffNotification.objects.filter(status="pending").count(),
+            "results": [n.to_dict() for n in notifications],
+        })
+
+    def patch(self, request, notification_id):
+        from agent.models import StaffNotification
+
+        try:
+            notification = StaffNotification.objects.get(id=notification_id)
+        except StaffNotification.DoesNotExist:
+            return Response(
+                {"detail": "Notification not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_status = request.data.get("status")
+        staff_notes = request.data.get("staff_notes", "")
+
+        if new_status not in ("acknowledged", "resolved"):
+            return Response(
+                {"detail": "Status must be 'acknowledged' or 'resolved'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        notification.status = new_status
+        if staff_notes:
+            notification.staff_notes = staff_notes
+        if new_status == "acknowledged":
+            notification.acknowledged_at = timezone.now()
+        elif new_status == "resolved":
+            notification.resolved_at = timezone.now()
+        notification.save()
+
+        return Response(notification.to_dict())

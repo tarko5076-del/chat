@@ -19,7 +19,7 @@ export const chatApi = createApi({
       return headers;
     },
   }),
-  tagTypes: ["Menu", "Order", "Reservation", "Payment", "Memory"],
+  tagTypes: ["Menu", "Order", "Reservation", "Payment", "Memory", "StaffNotification"],
   endpoints: (builder) => ({
     getMenuItems: builder.query({
       query: () => "/menu/items/",
@@ -111,6 +111,23 @@ export const chatApi = createApi({
     getProfile: builder.query({
       query: () => "/users/me/",
     }),
+
+    getStaffNotifications: builder.query({
+      query: (params?: { status?: string }) => ({
+        url: "/agent/staff-notifications/",
+        params,
+      }),
+      providesTags: ["StaffNotification"],
+    }),
+
+    updateStaffNotification: builder.mutation({
+      query: ({ id, ...body }: { id: number; status: string; staff_notes?: string }) => ({
+        url: `/agent/staff-notifications/${id}/`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: ["StaffNotification"],
+    }),
   }),
 });
 
@@ -127,6 +144,8 @@ export const {
   useRegisterMutation,
   useLoginMutation,
   useGetProfileQuery,
+  useGetStaffNotificationsQuery,
+  useUpdateStaffNotificationMutation,
 } = chatApi;
 
 export interface StreamCallbacks {

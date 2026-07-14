@@ -220,6 +220,102 @@ class MemoryManager:
                 conversation_id=conversation_id,
             )
 
+        self._extract_facts_from_tool_results(
+            customer_id=customer_id,
+            conversation_id=conversation_id,
+            working_memory=working_memory,
+        )
+
+    def _extract_facts_from_tool_results(
+        self,
+        *,
+        customer_id: str,
+        conversation_id: str | None,
+        working_memory: ConversationMemory,
+    ) -> None:
+        for result in working_memory.tool_results:
+            if not result.get("success") or not result.get("data"):
+                continue
+            memory_updates = result.get("memory_updates", {})
+            tool_name = result.get("tool_name", "")
+            for key, value in memory_updates.items():
+                if value is None:
+                    continue
+                self._classify_and_learn(
+                    customer_id=customer_id,
+                    conversation_id=conversation_id,
+                    key=key,
+                    value=str(value),
+                    tool_name=tool_name,
+                )
+
+    def _classify_and_learn(
+        self,
+        *,
+        customer_id: str,
+        conversation_id: str | None,
+        key: str,
+        value: str,
+        tool_name: str,
+    ) -> None:
+        if not value or value in ("None", "null", ""):
+            return
+
+        if key == "payment_method":
+            self.learn_fact(
+                customer_id=customer_id,
+                category="preference",
+                fact_key="preferred_payment",
+                fact_value=value,
+                conversation_id=conversation_id,
+                source_tool=tool_name,
+            )
+        elif key == "delivery_method":
+            self.learn_fact(
+                customer_id=customer_id,
+                category="preference",
+                fact_key="preferred_delivery",
+                fact_value=value,
+                conversation_id=conversation_id,
+                source_tool=tool_name,
+            )
+        elif key == "party_size":
+            self.learn_fact(
+                customer_id=customer_id,
+                category="pattern",
+                fact_key="typical_party_size",
+                fact_value=value,
+                conversation_id=conversation_id,
+                source_tool=tool_name,
+            )
+        elif key == "reservation_date":
+            self.learn_fact(
+                customer_id=customer_id,
+                category="pattern",
+                fact_key="last_reservation_date",
+                fact_value=value,
+                conversation_id=conversation_id,
+                source_tool=tool_name,
+            )
+        elif key == "reservation_time":
+            self.learn_fact(
+                customer_id=customer_id,
+                category="pattern",
+                fact_key="preferred_time",
+                fact_value=value,
+                conversation_id=conversation_id,
+                source_tool=tool_name,
+            )
+        elif key == "order_status" and value == "paid":
+            self.learn_fact(
+                customer_id=customer_id,
+                category="pattern",
+                fact_key="has_ordered",
+                fact_value="true",
+                conversation_id=conversation_id,
+                source_tool=tool_name,
+            )
+
     def update_profile(
         self,
         *,

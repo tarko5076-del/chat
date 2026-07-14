@@ -51,6 +51,7 @@ class ConversationMemory:
     payment_status: str | None = None
     payment_id: str | None = None
     notes: list[str] = field(default_factory=list)
+    tool_results: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_history(cls, history: list[dict] | None) -> "ConversationMemory":
@@ -85,12 +86,18 @@ class ConversationMemory:
     def remember_message(self, message: str) -> None:
         self._learn_from_text(message)
 
-    def remember_tool_result(self, result: ToolResult) -> None:
+    def remember_tool_result(self, result, tool_name: str | None = None) -> None:
         for key, value in result.memory_updates.items():
             if hasattr(self, key):
                 setattr(self, key, value)
         if result.message:
             self._learn_from_text(result.message)
+        self.tool_results.append({
+            "success": result.success,
+            "data": result.data,
+            "memory_updates": result.memory_updates,
+            "tool_name": tool_name or "",
+        })
 
     def to_state(self) -> dict:
         return {

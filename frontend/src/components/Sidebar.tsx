@@ -1,10 +1,16 @@
 import { useState } from "react";
 import { useAppSelector, useAppDispatch } from "../hooks";
 import { logout } from "../slices/authSlice";
-import { useGetMenuItemsQuery, useGetOrdersQuery, useGetReservationsQuery } from "../services/api";
+import {
+  useGetMenuItemsQuery,
+  useGetOrdersQuery,
+  useGetReservationsQuery,
+  useGetStaffNotificationsQuery,
+  useUpdateStaffNotificationMutation,
+} from "../services/api";
 import "./Sidebar.css";
 
-type Tab = "menu" | "orders" | "reservations";
+type Tab = "menu" | "orders" | "reservations" | "alerts";
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const dispatch = useAppDispatch();
@@ -14,9 +20,11 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const { data: menuItems, isLoading: menuLoading } = useGetMenuItemsQuery(undefined);
   const { data: ordersData, isLoading: ordersLoading } = useGetOrdersQuery(undefined);
   const { data: reservationsData, isLoading: reservationsLoading } = useGetReservationsQuery(undefined);
+  const { data: notificationsData } = useGetStaffNotificationsQuery({ status: "pending" });
 
   const orders = ordersData?.results ?? [];
   const reservations = reservationsData?.results ?? [];
+  const pendingCount = notificationsData?.count ?? 0;
 
   return (
     <>
@@ -54,6 +62,15 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           >
             Reservations
           </button>
+          <button
+            className={`sidebar__tab sidebar__tab--alerts ${tab === "alerts" ? "sidebar__tab--active" : ""}`}
+            onClick={() => setTab("alerts")}
+          >
+            Alerts
+            {pendingCount > 0 && (
+              <span className="sidebar__badge">{pendingCount}</span>
+            )}
+          </button>
         </nav>
 
         <div className="sidebar__body">
@@ -66,6 +83,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           {tab === "reservations" && (
             <ReservationsPanel reservations={reservations} loading={reservationsLoading} />
           )}
+          {tab === "alerts" && (
+            <AlertsPanel />
+          )}
         </div>
 
         <div className="sidebar__footer">
@@ -75,6 +95,49 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </div>
       </aside>
     </>
+  );
+}
+
+function AlertsPanel() {
+  const { data, isLoading } = useGetStaffNotificationsQuery({ status: "pending" });
+  const [updateNotification] = useUpdateStaffNotificationMutation();
+  const notifications = data?.results ?? [];
+
+  if (isLoading) return <div className="sidebar__loading">Loading alerts...</div>;
+  if (!notifications.length) return <div className="sidebar__empty">No pending staff alerts.</div>;
+
+  return (
+    <div className="alerts-panel">
+      {notifications.map((n: { id: number; priority: string; reason: string; customer_name: string; customer_id: string; created_at: string }) => (
+        <div key={n.id} className={`alerts-panel__item alerts-panel__item--${n.priority}`}>
+          <div className="alerts-panel__item-header">
+            <span className="alerts-panel__item-id">#{n.id}</span>
+            <span className={`orders-panel__badge orders-panel__badge--${n.priority === "high" ? "cancelled" : n.priority === "medium" ? "placed" : "draft"}`}>
+              {n.priority}
+            </span>
+          </div>
+          <p className="alerts-panel__item-reason">{n.reason}</p>
+          <div className="alerts-panel__item-meta">
+            <span>{n.customer_name || n.customer_id || "Unknown guest"}</span>
+            <span>{new Date(n.created_at).toLocaleString()}</span>
+          </div>
+          <div className="alerts-panel__actions">
+            <button
+              className="alerts-panel__btn alerts-panel__btn--ack"
+              onClick={() => updateNotification({ id: n.id, status: "acknowledged" })}
+            >
+              Acknowledge
+            </button>
+            <button
+              className="alerts-panel__btn alerts-panel__btn--resolve"
+              onClick={() => updateNotification({ id: n.id, status: "resolved" })}
+            >
+              Resolve
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
