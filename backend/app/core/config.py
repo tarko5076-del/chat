@@ -7,6 +7,16 @@ dotenv_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=dotenv_path)
 
 
+TAX_RATE: float = 0.0825
+DELIVERY_FEE: float = 4.99
+MAX_RESERVATIONS_PER_SLOT: int = 10
+MAX_PARTY_SIZE: int = 12
+OPENING_HOUR: int = 11
+CLOSING_HOUR: int = 22
+MAX_HISTORY_MESSAGES: int = 12
+MAX_MENU_ITEMS: int = 8
+
+
 class Settings:
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")

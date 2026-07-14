@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.core.config import TAX_RATE
 from app.database import SessionLocal
 from app.models.order import Order
 from app.tools.base import BaseTool, ToolResult
@@ -17,8 +18,6 @@ class BillingTool(BaseTool):
         },
     }
 
-    tax_rate = 0.0825
-
     async def execute(self, **kwargs: Any) -> ToolResult:
         db = SessionLocal()
         try:
@@ -31,7 +30,7 @@ class BillingTool(BaseTool):
                     next_action="ask_user",
                 )
             subtotal = sum(item.price * item.quantity for item in order.items)
-            tax = subtotal * self.tax_rate
+            tax = subtotal * TAX_RATE
             total = subtotal + tax
             lines = [
                 f"Bill for order ID: {order.id}",

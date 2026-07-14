@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import String, Integer, Float, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.config import TAX_RATE, DELIVERY_FEE
 from app.database import Base
 
 
@@ -24,8 +25,8 @@ class Order(Base):
 
     def to_dict(self) -> dict:
         subtotal = sum(item.price * item.quantity for item in self.items)
-        tax = subtotal * 0.0825
-        delivery_fee = 4.99 if self.delivery_method == "delivery" else 0.0
+        tax = subtotal * TAX_RATE
+        delivery_fee = DELIVERY_FEE if self.delivery_method == "delivery" else 0.0
         return {
             "id": self.id,
             "customer_name": self.customer_name,

@@ -1,9 +1,15 @@
 import re
 from dataclasses import dataclass, field
-from datetime import date, timedelta
 from typing import Any
 
 from app.tools.base import ToolResult
+from app.utils.text import (
+    parse_date,
+    parse_time,
+    parse_party_size,
+    extract_email,
+    extract_phone,
+)
 
 
 def empty_order_state() -> dict[str, Any]:
@@ -97,23 +103,22 @@ class ConversationMemory:
             self.customer_name = self._clean_name(match.group(1))
         if match := re.search(r"\bfor ([A-Za-z]+(?: [A-Za-z]+)?)", text, re.I):
             self.customer_name = self.customer_name or self._clean_name(match.group(1))
-        if match := re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", text):
-            self.email = match.group(0)
-        if match := re.search(r"\b(?:\+?\d[\d .-]{6,}\d)\b", text):
-            value = match.group(0)
+        if email := extract_email(text):
+            self.email = email
+        if phone := extract_phone(text):
             lower_text = text.lower()
             is_restaurant_payment_number = "company number" in lower_text or "mobile money" in lower_text
-            if not is_restaurant_payment_number and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-                self.phone = value
+            if not is_restaurant_payment_number:
+                self.phone = phone
         if match := re.search(r"\bReservation(?: confirmed!)? \(?ID:?\s*(\d+)\)?", text, re.I):
             self.reservation_id = int(match.group(1))
         if match := re.search(r"\bOrder(?: created)? \(?ID:?\s*(\d+)\)?", text, re.I):
             self.order_id = int(match.group(1))
-        if party_size := self._party_size(text.lower()):
+        if party_size := parse_party_size(text):
             self.party_size = party_size
-        if res_date := self._date(text.lower()):
+        if res_date := parse_date(text):
             self.reservation_date = res_date
-        if res_time := self._time(text.lower()):
+        if res_time := parse_time(text):
             self.reservation_time = res_time
 
     def as_context(self) -> str:
@@ -160,41 +165,6 @@ class ConversationMemory:
         self.payment_status = None
         self.payment_id = None
 
-    def _party_size(self, text: str) -> int | None:
-        match = re.search(r"(?:for|to)\s*(\d+)|(\d+)\s*(?:people|guests|person)", text)
-        return int(match.group(1) or match.group(2)) if match else None
-
     def _clean_name(self, value: str) -> str:
         name = value.strip()
         return re.sub(r"\s+(and|for|to|reserve|book)$", "", name, flags=re.I).strip()
-
-    def _date(self, text: str) -> str | None:
-        if "tomorrow" in text:
-            return (date.today() + timedelta(days=1)).isoformat()
-        if "today" in text:
-            return date.today().isoformat()
-        match = re.search(r"\b\d{4}-\d{2}-\d{2}\b", text)
-        return match.group(0) if match else None
-
-    def _time(self, text: str) -> str | None:
-        match = re.search(r"\bat\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", text)
-        if not match:
-            match = re.search(r"\b(\d{1,2})(?::(\d{2}))\s*(am|pm)?\b", text)
-        if not match:
-            match = re.search(r"\b(\d{1,2})\s*(am|pm)\b", text, re.I)
-        if not match:
-            # Handle "X hours" as time-of-day (e.g. "3 hours" → 3:00)
-            match = re.search(r"\b(\d{1,2})\s*hours?\s*(am|pm)?\b", text, re.I)
-        if not match:
-            return None
-        groups = match.groups()
-        hour = int(match.group(1))
-        minute = int(groups[1]) if len(groups) > 1 and groups[1] and str(groups[1]).isdigit() else 0
-        meridiem = groups[2] if len(groups) > 2 else groups[1]
-        if isinstance(meridiem, str) and meridiem.lower() == "pm" and hour < 12:
-            hour += 12
-        if isinstance(meridiem, str) and meridiem.lower() == "am" and hour == 12:
-            hour = 0
-        if hour > 23 or minute > 59:
-            return None
-        return f"{hour:02d}:{minute:02d}"

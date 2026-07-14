@@ -1,17 +1,17 @@
 import re
 from typing import Any
 
+from app.core.config import TAX_RATE, DELIVERY_FEE
 from app.database import SessionLocal
 from app.models.menu import MenuItem
 from app.models.order import Order, OrderItem
 from app.tools.base import BaseTool, ToolResult
+from app.utils.text import words as _words, cuisine_hint_words as _cuisine_hint_words
 
 
 class OrderTool(BaseTool):
     name = "manage_order"
     description = "Create, add to, remove from, show, cancel, or retrieve customer orders."
-    tax_rate = 0.0825
-    delivery_fee = 4.99
     parameters = {
         "type": "object",
         "properties": {
@@ -284,10 +284,10 @@ class OrderTool(BaseTool):
         exact = next((item for item in items if item.name.lower() in lowered), None)
         if exact:
             return exact
-        query_words = self._words(lowered)
+        query_words = _words(lowered)
         scored = []
         for item in items:
-            name_words = self._words(item.name)
+            name_words = _words(item.name)
             score = len(query_words & name_words)
             if score:
                 scored.append((score, len(name_words), item))
@@ -381,13 +381,13 @@ class OrderTool(BaseTool):
     def _filter_orders(self, orders: list[Order], search: str | None) -> list[Order]:
         if not search:
             return orders
-        words = self._words(search)
-        if not words:
+        search_words = _words(search)
+        if not search_words:
             return orders
         return [
             order
             for order in orders
-            if any(words & self._words(item.item_name) for item in order.items)
+            if any(search_words & _words(item.item_name) for item in order.items)
         ]
 
     def _item_not_found(self, db: SessionLocal, requested_name: str) -> ToolResult:
@@ -434,16 +434,16 @@ class OrderTool(BaseTool):
         item: MenuItem | None = None,
     ) -> list[MenuItem]:
         available = db.query(MenuItem).filter(MenuItem.available.is_(True)).all()
-        requested_words = self._words(requested_name or "")
-        requested_words |= self._cuisine_hint_words(requested_name or "")
+        requested_words = _words(requested_name or "")
+        requested_words |= _cuisine_hint_words(requested_name or "")
         if item:
-            requested_words |= self._words(item.name)
-            requested_words |= self._words(item.description)
+            requested_words |= _words(item.name)
+            requested_words |= _words(item.description)
         scored: list[tuple[int, float, MenuItem]] = []
         for candidate in available:
             if item and candidate.id == item.id:
                 continue
-            candidate_words = self._words(candidate.name) | self._words(candidate.description)
+            candidate_words = _words(candidate.name) | _words(candidate.description)
             score = len(requested_words & candidate_words)
             if item and candidate.category == item.category:
                 score += 5
@@ -490,8 +490,8 @@ class OrderTool(BaseTool):
 
     def _order_total(self, order: Order) -> float:
         subtotal = sum(item.price * item.quantity for item in order.items)
-        delivery_fee = self.delivery_fee if order.delivery_method == "delivery" else 0.0
-        return subtotal + (subtotal * self.tax_rate) + delivery_fee
+        delivery = DELIVERY_FEE if order.delivery_method == "delivery" else 0.0
+        return subtotal + (subtotal * TAX_RATE) + delivery
 
     def _identity_updates(self, kwargs: dict) -> dict[str, Any]:
         return {
@@ -499,24 +499,3 @@ class OrderTool(BaseTool):
             for key in ["customer_id", "customer_name", "email", "phone"]
             if kwargs.get(key)
         }
-
-    def _words(self, text: str) -> set[str]:
-        stop_words = {"i", "want", "order", "add", "the", "a", "an", "please", "my", "last", "same"}
-        return {
-            word
-            for word in re.findall(r"[a-z0-9]+", text.lower())
-            if word not in stop_words and len(word) > 1
-        }
-
-    def _cuisine_hint_words(self, text: str) -> set[str]:
-        lowered = text.lower()
-        hints: set[str] = set()
-        if any(word in lowered for word in ["sushi", "seafood", "fish"]):
-            hints.update({"fish", "salmon", "seafood", "calamari", "shrimp", "squid"})
-        if "pizza" in lowered:
-            hints.update({"pizza", "tomato", "mozzarella", "cheese"})
-        if "pasta" in lowered or "lasagna" in lowered:
-            hints.update({"pasta", "spaghetti", "penne", "carbonara", "tomato", "parmesan"})
-        if "burger" in lowered:
-            hints.update({"chicken", "bread", "cheese"})
-        return hints

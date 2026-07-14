@@ -1,6 +1,7 @@
 from datetime import date, time
 from typing import Any
 
+from app.core.config import MAX_RESERVATIONS_PER_SLOT, MAX_PARTY_SIZE, OPENING_HOUR, CLOSING_HOUR
 from app.database import SessionLocal
 from app.models.reservation import Reservation
 from app.tools.base import BaseTool, ToolResult
@@ -24,10 +25,8 @@ class ReservationTool(BaseTool):
         "required": ["action"],
     }
 
-    max_reservations_per_slot = 10
-    max_party_size = 12
-    opening_time = time(11, 0)
-    closing_time = time(22, 0)
+    opening_time = time(OPENING_HOUR, 0)
+    closing_time = time(CLOSING_HOUR, 0)
 
     async def execute(self, **kwargs: Any) -> ToolResult:
         db = SessionLocal()
@@ -266,10 +265,10 @@ class ReservationTool(BaseTool):
     ) -> tuple[bool, str]:
         if party_size < 1:
             return False, "Party size must be at least 1 guest."
-        if party_size > self.max_party_size:
-            return False, f"For parties over {self.max_party_size}, please call the restaurant directly."
+        if party_size > MAX_PARTY_SIZE:
+            return False, f"For parties over {MAX_PARTY_SIZE}, please call the restaurant directly."
         if reservation_time < self.opening_time or reservation_time >= self.closing_time:
-            return False, "That time is outside our opening hours of 11:00 AM to 10:00 PM."
+            return False, f"That time is outside our opening hours of {OPENING_HOUR}:00 AM to {CLOSING_HOUR}:00 PM."
 
         query = db.query(Reservation).filter(
             Reservation.reservation_date == reservation_date,
@@ -279,7 +278,7 @@ class ReservationTool(BaseTool):
         if exclude_reservation_id:
             query = query.filter(Reservation.id != exclude_reservation_id)
         existing = query.count()
-        if existing >= self.max_reservations_per_slot:
+        if existing >= MAX_RESERVATIONS_PER_SLOT:
             return False, (
                 f"Sorry, no tables are available on {reservation_date} "
                 f"at {reservation_time.strftime('%H:%M')}."

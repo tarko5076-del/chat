@@ -9,6 +9,7 @@ from app.agent.order_workflow import OrderWorkflow
 from app.agent.planner import LocalPlanner
 from app.agent.prompts import system_prompt
 from app.agent.react import ReActLoop
+from app.core.config import MAX_HISTORY_MESSAGES
 from app.llm.client import LLMClient
 from app.tools import BillingTool, FAQTool, MenuTool, OrderTool, PaymentTool, ReservationTool
 from app.tools.base import BaseTool, ToolResult
@@ -100,7 +101,7 @@ class RestaurantAgent:
         system_messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt()},
             {"role": "system", "content": f"Conversation memory: {memory.as_context()}"},
-            *history[-12:],
+            *history[-MAX_HISTORY_MESSAGES:],
         ]
 
         result = await self.react.run(system_messages, message, memory)
@@ -126,7 +127,7 @@ class RestaurantAgent:
         system_messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt()},
             {"role": "system", "content": f"Conversation memory: {memory.as_context()}"},
-            *history[-12:],
+            *history[-MAX_HISTORY_MESSAGES:],
         ]
 
         final_response = ""

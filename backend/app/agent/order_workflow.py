@@ -2,8 +2,10 @@ import re
 from typing import Any
 
 from app.agent.memory import ConversationMemory, empty_order_state
+from app.core.config import TAX_RATE, DELIVERY_FEE
 from app.database import SessionLocal
 from app.models.menu import MenuItem
+from app.utils.text import words as _words, cuisine_hint_words as _cuisine_hint_words
 
 
 class OrderWorkflow:
@@ -32,8 +34,6 @@ class OrderWorkflow:
         "start a new order",
         "make a new order",
     }
-    tax_rate = 0.0825
-    delivery_fee = 4.99
 
     def __init__(self, agent: Any) -> None:
         self.agent = agent
@@ -380,8 +380,8 @@ class OrderWorkflow:
             subtotal += line_total
             lines.append(f"- {item['quantity']} x {item['name']}: ${line_total:.2f}")
         delivery_method = memory.order_state.get("delivery_method") or "Not selected"
-        delivery_fee = self.delivery_fee if delivery_method == "delivery" else 0.0
-        tax = subtotal * self.tax_rate
+        delivery_fee = DELIVERY_FEE if delivery_method == "delivery" else 0.0
+        tax = subtotal * TAX_RATE
         total = subtotal + tax + delivery_fee
         payment_method = memory.order_state.get("payment_method") or "Not selected"
         lines.extend(
@@ -418,10 +418,10 @@ class OrderWorkflow:
         exact = next((item for item in items if item.name.lower() in text), None)
         if exact:
             return exact
-        text_words = self._words(text)
+        text_words = _words(text)
         scored = []
         for item in items:
-            name_words = self._words(item.name)
+            name_words = _words(item.name)
             score = len(text_words & name_words)
             if score:
                 scored.append((score, len(name_words), item))
@@ -461,16 +461,16 @@ class OrderWorkflow:
         db = SessionLocal()
         try:
             available = db.query(MenuItem).filter(MenuItem.available.is_(True)).all()
-            requested_words = self._words(requested_name or "")
-            requested_words |= self._cuisine_hint_words(requested_name or "")
+            requested_words = _words(requested_name or "")
+            requested_words |= _cuisine_hint_words(requested_name or "")
             if item:
-                requested_words |= self._words(item.name)
-                requested_words |= self._words(item.description)
+                requested_words |= _words(item.name)
+                requested_words |= _words(item.description)
             scored: list[tuple[int, float, MenuItem]] = []
             for candidate in available:
                 if item and candidate.id == item.id:
                     continue
-                candidate_words = self._words(candidate.name) | self._words(candidate.description)
+                candidate_words = _words(candidate.name) | _words(candidate.description)
                 score = len(requested_words & candidate_words)
                 if item and candidate.category == item.category:
                     score += 5
@@ -688,7 +688,7 @@ class OrderWorkflow:
 
     def _looks_like_bare_item_request(self, text: str, memory: ConversationMemory) -> bool:
         if memory.order_status not in {"collecting", "awaiting_quantity"} and not (
-            memory.order_status is None and self._cuisine_hint_words(text)
+            memory.order_status is None and _cuisine_hint_words(text)
         ):
             return False
         if self._delivery_method(text) or self._payment_method(text):
@@ -712,10 +712,10 @@ class OrderWorkflow:
             "history",
             "previous",
         }
-        words = self._words(text)
-        if not words or words & blocked_words:
+        text_words = _words(text)
+        if not text_words or text_words & blocked_words:
             return False
-        return 1 <= len(words) <= 4
+        return 1 <= len(text_words) <= 4
 
     def _display_requested_name(self, text: str) -> str:
         clean = re.sub(r"[^a-z0-9 '&-]", "", text, flags=re.I).strip()
@@ -725,38 +725,3 @@ class OrderWorkflow:
         text = message.strip()
         text = re.sub(r"^(my name is|name is|it is|it's|for)\s+", "", text, flags=re.I)
         return " ".join(part.capitalize() for part in text.split())[:100] or "Guest"
-
-    def _words(self, text: str) -> set[str]:
-        stop_words = {
-            "i",
-            "want",
-            "order",
-            "add",
-            "the",
-            "a",
-            "an",
-            "please",
-            "my",
-            "last",
-            "same",
-            "thing",
-            "time",
-        }
-        return {
-            word
-            for word in re.findall(r"[a-z0-9]+", text.lower())
-            if word not in stop_words and len(word) > 1
-        }
-
-    def _cuisine_hint_words(self, text: str) -> set[str]:
-        lowered = text.lower()
-        hints: set[str] = set()
-        if any(word in lowered for word in ["sushi", "seafood", "fish"]):
-            hints.update({"fish", "salmon", "seafood", "calamari", "shrimp", "squid"})
-        if "pizza" in lowered:
-            hints.update({"pizza", "tomato", "mozzarella", "cheese"})
-        if "pasta" in lowered or "lasagna" in lowered:
-            hints.update({"pasta", "spaghetti", "penne", "carbonara", "tomato", "parmesan"})
-        if "burger" in lowered:
-            hints.update({"chicken", "bread", "cheese"})
-        return hints
