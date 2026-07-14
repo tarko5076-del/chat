@@ -208,3 +208,33 @@ class StaffNotificationView(APIView):
         notification.save()
 
         return Response(notification.to_dict())
+
+
+class ToolCallLogView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from agent.models import EpisodicMemory
+
+        customer_id = request.query_params.get("customer_id")
+        limit = min(int(request.query_params.get("limit", 50)), 200)
+
+        qs = EpisodicMemory.objects.filter(event_type="tool_call")
+        if customer_id:
+            qs = qs.filter(customer_id=customer_id)
+        events = list(qs.order_by("-created_at")[:limit])
+
+        return Response({
+            "count": qs.count(),
+            "results": [
+                {
+                    "id": e.id,
+                    "tool_name": e.tool_name,
+                    "success": e.tool_success,
+                    "duration_ms": e.tool_duration_ms,
+                    "outcome": e.outcome,
+                    "created_at": e.created_at.isoformat() if e.created_at else None,
+                }
+                for e in events
+            ],
+        })

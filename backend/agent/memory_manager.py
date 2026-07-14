@@ -50,6 +50,7 @@ class MemoryManager:
         tool_name: str,
         tool_args: dict[str, Any],
         result: ToolResult,
+        duration_ms: int | None = None,
         goal_description: str | None = None,
         goal_status: str | None = None,
     ) -> None:
@@ -60,6 +61,7 @@ class MemoryManager:
             event_data=json.dumps(tool_args, default=str),
             tool_name=tool_name,
             tool_success=result.success,
+            tool_duration_ms=duration_ms,
             goal_description=goal_description,
             goal_status=goal_status,
             outcome="success" if result.success else "failure",

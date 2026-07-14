@@ -19,7 +19,7 @@ export const chatApi = createApi({
       return headers;
     },
   }),
-  tagTypes: ["Menu", "Order", "Reservation", "Payment", "Memory", "StaffNotification"],
+  tagTypes: ["Menu", "Order", "Reservation", "Payment", "Memory", "StaffNotification", "ToolLog"],
   endpoints: (builder) => ({
     getMenuItems: builder.query({
       query: () => "/menu/items/",
@@ -128,6 +128,14 @@ export const chatApi = createApi({
       }),
       invalidatesTags: ["StaffNotification"],
     }),
+
+    getToolLogs: builder.query({
+      query: (params?: { customer_id?: string; limit?: number }) => ({
+        url: "/agent/tool-logs/",
+        params,
+      }),
+      providesTags: ["ToolLog"],
+    }),
   }),
 });
 
@@ -146,6 +154,7 @@ export const {
   useGetProfileQuery,
   useGetStaffNotificationsQuery,
   useUpdateStaffNotificationMutation,
+  useGetToolLogsQuery,
 } = chatApi;
 
 export interface StreamCallbacks {

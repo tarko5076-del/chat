@@ -178,8 +178,8 @@ class RestaurantAgent:
 
         try:
             self.react.set_tool_trace_callback(
-                lambda name, args, result: self._trace_tool(
-                    name, args, result,
+                lambda name, args, result, duration_ms=None: self._trace_tool(
+                    name, args, result, duration_ms=duration_ms,
                     customer_id=customer_id,
                     conversation_id=conversation_id,
                 )
@@ -242,8 +242,8 @@ class RestaurantAgent:
 
         try:
             self.react.set_tool_trace_callback(
-                lambda name, args, result: self._trace_tool(
-                    name, args, result,
+                lambda name, args, result, duration_ms=None: self._trace_tool(
+                    name, args, result, duration_ms=duration_ms,
                     customer_id=customer_id,
                     conversation_id=conversation_id,
                 )
@@ -274,6 +274,7 @@ class RestaurantAgent:
         name: str,
         args: dict[str, Any],
         result: ToolResult,
+        duration_ms: int | None = None,
         *,
         customer_id: str | None = None,
         conversation_id: str | None = None,
@@ -285,6 +286,7 @@ class RestaurantAgent:
                 tool_name=name,
                 tool_args=args,
                 result=result,
+                duration_ms=duration_ms,
             )
         except Exception:
             logger.debug("Failed to trace tool event", exc_info=True)

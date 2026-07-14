@@ -7,10 +7,11 @@ import {
   useGetReservationsQuery,
   useGetStaffNotificationsQuery,
   useUpdateStaffNotificationMutation,
+  useGetToolLogsQuery,
 } from "../services/api";
 import "./Sidebar.css";
 
-type Tab = "menu" | "orders" | "reservations" | "alerts";
+type Tab = "menu" | "orders" | "reservations" | "alerts" | "activity";
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const dispatch = useAppDispatch();
@@ -71,6 +72,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
               <span className="sidebar__badge">{pendingCount}</span>
             )}
           </button>
+          <button
+            className={`sidebar__tab ${tab === "activity" ? "sidebar__tab--active" : ""}`}
+            onClick={() => setTab("activity")}
+          >
+            Activity
+          </button>
         </nav>
 
         <div className="sidebar__body">
@@ -85,6 +92,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           )}
           {tab === "alerts" && (
             <AlertsPanel />
+          )}
+          {tab === "activity" && (
+            <ActivityPanel />
           )}
         </div>
 
@@ -236,6 +246,66 @@ function ReservationsPanel({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+interface ToolLog {
+  id: number;
+  tool_name: string;
+  success: boolean;
+  duration_ms: number | null;
+  outcome: string;
+  created_at: string;
+}
+
+function ActivityPanel() {
+  const { data, isLoading } = useGetToolLogsQuery({ limit: 30 });
+  const logs = (data?.results ?? []) as ToolLog[];
+
+  if (isLoading) return <div className="sidebar__loading">Loading activity...</div>;
+  if (!logs.length) return <div className="sidebar__empty">No tool activity yet.</div>;
+
+  const successCount = logs.filter((l) => l.success).length;
+  const failCount = logs.length - successCount;
+  const avgDuration = logs.reduce((sum, l) => sum + (l.duration_ms ?? 0), 0) / (logs.length || 1);
+
+  return (
+    <div className="activity-panel">
+      <div className="activity-panel__stats">
+        <div className="activity-panel__stat">
+          <span className="activity-panel__stat-value">{logs.length}</span>
+          <span className="activity-panel__stat-label">Total calls</span>
+        </div>
+        <div className="activity-panel__stat activity-panel__stat--success">
+          <span className="activity-panel__stat-value">{successCount}</span>
+          <span className="activity-panel__stat-label">Succeeded</span>
+        </div>
+        <div className="activity-panel__stat activity-panel__stat--fail">
+          <span className="activity-panel__stat-value">{failCount}</span>
+          <span className="activity-panel__stat-label">Failed</span>
+        </div>
+        <div className="activity-panel__stat">
+          <span className="activity-panel__stat-value">{Math.round(avgDuration)}ms</span>
+          <span className="activity-panel__stat-label">Avg duration</span>
+        </div>
+      </div>
+      <div className="activity-panel__list">
+        {logs.map((log) => (
+          <div key={log.id} className={`activity-panel__item ${!log.success ? "activity-panel__item--fail" : ""}`}>
+            <div className="activity-panel__item-header">
+              <span className="activity-panel__item-name">{log.tool_name}</span>
+              <span className={`orders-panel__badge orders-panel__badge--${log.success ? "paid" : "cancelled"}`}>
+                {log.outcome}
+              </span>
+            </div>
+            <div className="activity-panel__item-meta">
+              <span>{log.duration_ms !== null ? `${log.duration_ms}ms` : "—"}</span>
+              <span>{new Date(log.created_at).toLocaleTimeString()}</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

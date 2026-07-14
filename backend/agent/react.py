@@ -26,7 +26,7 @@ REFLECTION_PROMPT = (
     "exact same tool call."
 )
 
-ToolTraceCallback = Callable[[str, dict[str, Any], ToolResult], None]
+ToolTraceCallback = Callable[[str, dict[str, Any], ToolResult, int | None], None]
 
 
 @dataclass
@@ -360,7 +360,7 @@ class ReActLoop:
             duration_ms,
         )
         if self._tool_trace_callback:
-            self._tool_trace_callback(name, args, result)
+            self._tool_trace_callback(name, args, result, duration_ms)
         return result
 
     def _detect_action_type(self, tool_name: str, result: ToolResult) -> str | None:
