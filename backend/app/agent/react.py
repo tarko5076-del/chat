@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, TYPE_CHECKING
+from typing import Any, AsyncIterator, Callable, TYPE_CHECKING
 
+from app.agent.goals import GoalStack
 from app.agent.memory import ConversationMemory
 from app.llm.client import LLMClient, tool_arguments
 from app.tools.base import ToolResult
@@ -24,6 +25,9 @@ REFLECTION_PROMPT = (
 )
 
 
+ToolTraceCallback = Callable[[str, dict[str, Any], ToolResult], None]
+
+
 @dataclass
 class ReActStep:
     iteration: int
@@ -40,6 +44,7 @@ class ReActResult:
     response: str
     steps: list[ReActStep]
     messages: list[dict[str, Any]]
+    goals: GoalStack | None = None
 
 
 class ReActLoop:
@@ -48,6 +53,27 @@ class ReActLoop:
     def __init__(self, llm: LLMClient, tools: dict[str, BaseTool]) -> None:
         self.llm = llm
         self.tools = tools
+        self._tool_trace_callback: ToolTraceCallback | None = None
+
+    def set_tool_trace_callback(self, callback: ToolTraceCallback | None) -> None:
+        self._tool_trace_callback = callback
+
+    def _build_goal_context(self, goals: GoalStack) -> str:
+        if not goals:
+            return ""
+        return f"\n\nCurrent goal stack:\n{goals.as_context()}"
+
+    def _build_system_with_goals(
+        self,
+        system_messages: list[dict[str, Any]],
+        goals: GoalStack,
+    ) -> list[dict[str, Any]]:
+        if not goals:
+            return list(system_messages)
+        messages = list(system_messages)
+        goal_msg = {"role": "system", "content": self._build_goal_context(goals)}
+        messages.append(goal_msg)
+        return messages
 
     async def run(
         self,
@@ -55,13 +81,17 @@ class ReActLoop:
         user_message: str,
         memory: ConversationMemory,
     ) -> ReActResult:
+        goals = GoalStack()
         messages = list(system_messages)
         steps: list[ReActStep] = []
 
         if self._user_requests_planning(user_message):
             messages.append({
                 "role": "system",
-                "content": "Break this into a clear plan before calling tools.",
+                "content": (
+                    "This is a multi-part request. Break it into specific goals "
+                    "and work through them one at a time. Push each as a goal."
+                ),
             })
 
         messages.append({"role": "user", "content": user_message})
@@ -80,6 +110,7 @@ class ReActLoop:
                     response=final_content,
                     steps=steps,
                     messages=messages,
+                    goals=goals,
                 )
 
             for call in assistant.tool_calls:
@@ -106,12 +137,17 @@ class ReActLoop:
                     "content": result.to_llm_content(),
                 })
 
-            messages.append({"role": "system", "content": REFLECTION_PROMPT})
+            goal_context = self._build_goal_context(goals)
+            messages.append({
+                "role": "system",
+                "content": f"{REFLECTION_PROMPT}\n\n{goal_context}",
+            })
 
         return ReActResult(
             response="I used several tools but need one more detail to finish. Could you clarify?",
             steps=steps,
             messages=messages,
+            goals=goals,
         )
 
     async def run_stream(
@@ -121,13 +157,17 @@ class ReActLoop:
         memory: ConversationMemory,
     ) -> AsyncIterator[dict[str, Any]]:
         """Streaming version of run(). Yields SSE events."""
+        goals = GoalStack()
         messages = list(system_messages)
         steps: list[ReActStep] = []
 
         if self._user_requests_planning(user_message):
             messages.append({
                 "role": "system",
-                "content": "Break this into a clear plan before calling tools.",
+                "content": (
+                    "This is a multi-part request. Break it into specific goals "
+                    "and work through them one at a time. Push each as a goal."
+                ),
             })
 
         messages.append({"role": "user", "content": user_message})
@@ -177,6 +217,7 @@ class ReActLoop:
                         "type": "done",
                         "response": full_response,
                         "steps": len(steps),
+                        "goals": goals.as_dicts(),
                     }
                     return
 
@@ -199,6 +240,7 @@ class ReActLoop:
                     "type": "done",
                     "response": full_response or "I handled that, but I do not have more detail.",
                     "steps": len(steps),
+                    "goals": goals.as_dicts(),
                 }
                 return
 
@@ -252,12 +294,17 @@ class ReActLoop:
                     "content": result.to_llm_content(),
                 })
 
-            messages.append({"role": "system", "content": REFLECTION_PROMPT})
+            goal_context = self._build_goal_context(goals)
+            messages.append({
+                "role": "system",
+                "content": f"{REFLECTION_PROMPT}\n\n{goal_context}",
+            })
 
         yield {
             "type": "done",
             "response": full_response or "I used several tools but need one more detail to finish.",
             "steps": len(steps),
+            "goals": goals.as_dicts(),
         }
 
     async def _execute_tool(
@@ -279,6 +326,8 @@ class ReActLoop:
             name,
             result.success,
         )
+        if self._tool_trace_callback:
+            self._tool_trace_callback(name, args, result)
         return result
 
     def _user_requests_planning(self, message: str) -> bool:

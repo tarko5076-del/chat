@@ -23,6 +23,21 @@ def system_prompt() -> str:
         "5. **Final answer.** When you have all the information you need, produce a "
         "clear, natural-language response. Do not leave tool results raw; synthesize "
         "them into a helpful reply.\n\n"
+        "## Goal management\n\n"
+        "You maintain a goal stack to track multi-step work. When the user sends a "
+        "new message:\n"
+        "- Decompose the request into specific, actionable goals.\n"
+        "- Push new goals onto the stack (the system manages the stack for you).\n"
+        "- Work on the highest-priority pending goal first.\n"
+        "- When a goal is achieved, move to the next one.\n"
+        "- If a goal is blocked (e.g. missing info), ask the user and keep it pending "
+        "while you handle other goals.\n\n"
+        "Goal examples:\n"
+        "- User: 'Reserve a table for 4 tomorrow at 7pm and recommend a wine'\n"
+        "  Goals: (1) Check table availability for 4 tomorrow 7pm, "
+        "(2) Create reservation, (3) Recommend a wine.\n"
+        "- User: 'What's on the menu and do you have parking?'\n"
+        "  Goals: (1) List menu items, (2) Answer parking FAQ.\n\n"
         "## Rules\n\n"
         "- Never fabricate menu items, prices, reservations, orders, or policies. "
         "Always retrieve data from tools.\n"
@@ -39,4 +54,16 @@ def system_prompt() -> str:
         "- After order creation, guide the customer through payment using the supported "
         "payment methods.\n\n"
         f"Today's date is {today}."
+    )
+
+
+def goal_decomposition_prompt(user_message: str, goal_context: str) -> str:
+    return (
+        f"The user said: \"{user_message}\"\n\n"
+        f"Current goal stack:\n{goal_context}\n\n"
+        "Decompose the user's request into specific goals. For each goal, state:\n"
+        "- A short, actionable description\n"
+        "- Priority (higher = more urgent, default 0)\n\n"
+        "Then reason about which goal to tackle first based on dependencies. "
+        "Start calling tools for the first goal."
     )

@@ -11,11 +11,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.agent.controller import agent
+from app.agent.memory_manager import MemoryManager
 from app.database import get_db
 from app.schemas.chat import ChatRequest, ChatResponse, ErrorResponse
 from app.services.conversations import conversation_store
 
 router = APIRouter()
+
+memory_manager = MemoryManager()
 
 
 def _format_sse(event: dict) -> str:
@@ -45,7 +48,13 @@ async def _stream_chat(
         memory.phone = request.phone or memory.phone
 
         full_response = ""
-        async for event in agent.run_stream(request.message, server_history, memory):
+        async for event in agent.run_stream(
+            request.message,
+            server_history,
+            memory,
+            customer_id=memory.customer_id,
+            conversation_id=conversation.id,
+        ):
             if event["type"] == "done":
                 full_response = event["response"]
             yield _format_sse(event)
@@ -97,7 +106,13 @@ async def chat_endpoint(
         memory.customer_name = request.customer_name or memory.customer_name
         memory.email = request.email or memory.email
         memory.phone = request.phone or memory.phone
-        response_text = await agent.run(request.message, server_history, memory)
+        response_text = await agent.run(
+            request.message,
+            server_history,
+            memory,
+            customer_id=memory.customer_id,
+            conversation_id=conversation.id,
+        )
 
         conversation_store.append_message(db, conversation, "user", request.message)
         conversation_store.append_message(db, conversation, "assistant", response_text)
@@ -139,3 +154,21 @@ async def chat_stream_endpoint(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/memory/{customer_id}")
+async def get_customer_memory(
+    customer_id: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Inspect what the agent remembers about a customer."""
+    episodic = memory_manager.get_episodic_history(db, customer_id=customer_id, limit=30)
+    semantic = memory_manager.get_semantic_facts(db, customer_id=customer_id)
+    profile = memory_manager.get_profile(db, customer_id=customer_id)
+
+    return {
+        "customer_id": customer_id,
+        "episodic": episodic,
+        "semantic": semantic,
+        "profile": profile.to_dict() if profile else None,
+    }

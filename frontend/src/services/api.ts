@@ -1,53 +1,135 @@
+import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type {
   ChatRequest,
-  ChatResponse,
   ChatHistoryMessage,
   StreamEvent,
 } from "../types/chat";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 
-/**
- * Send a user message to the backend and get an AI response.
- *
- * @param message - The user's message.
- * @param history - Optional conversation history.
- * @param conversationId - Server-side conversation identifier.
- * @returns The assistant's response text.
- * @throws If the network request fails or the API returns an error.
- */
-export async function sendMessage(
-  message: string,
-  history?: ChatHistoryMessage[],
-  conversationId?: string,
-): Promise<ChatResponse> {
-  const body: ChatRequest = {
-    message,
-    history,
-    conversation_id: conversationId,
-  };
-
-  const response = await fetch(`${API_BASE_URL}/chat`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+export const chatApi = createApi({
+  reducerPath: "chatApi",
+  baseQuery: fetchBaseQuery({
+    baseUrl: API_BASE_URL,
+    prepareHeaders: (headers) => {
+      const token = localStorage.getItem("access_token");
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+      return headers;
     },
-    body: JSON.stringify(body),
-  });
+  }),
+  tagTypes: ["Menu", "Order", "Reservation", "Payment", "Memory"],
+  endpoints: (builder) => ({
+    getMenuItems: builder.query({
+      query: () => "/menu/items/",
+      providesTags: ["Menu"],
+    }),
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => null);
-    const detail = errorBody?.detail ?? `Request failed with status ${response.status}`;
-    throw new Error(detail);
-  }
+    getOrders: builder.query({
+      query: (params?: { customer_id?: string; status?: string }) => ({
+        url: "/orders/",
+        params,
+      }),
+      providesTags: ["Order"],
+    }),
 
-  const data: ChatResponse = await response.json();
-  return data;
-}
+    getOrder: builder.query({
+      query: (id: number) => `/orders/${id}/`,
+      providesTags: (_result, _error, id) => [{ type: "Order", id }],
+    }),
 
-/**
- * Callback interface for streaming chat responses.
- */
+    createOrder: builder.mutation({
+      query: (body) => ({
+        url: "/orders/",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Order"],
+    }),
+
+    getReservations: builder.query({
+      query: (params?: { customer_id?: string; status?: string }) => ({
+        url: "/reservations/",
+        params,
+      }),
+      providesTags: ["Reservation"],
+    }),
+
+    createReservation: builder.mutation({
+      query: (body) => ({
+        url: "/reservations/",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Reservation"],
+    }),
+
+    getPayments: builder.query({
+      query: (params?: { order_id?: number; status?: string }) => ({
+        url: "/payments/",
+        params,
+      }),
+      providesTags: ["Payment"],
+    }),
+
+    createPayment: builder.mutation({
+      query: (body) => ({
+        url: "/payments/",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Payment"],
+    }),
+
+    getCustomerMemory: builder.query({
+      query: (customerId: string) => `/memory/${customerId}/`,
+      providesTags: ["Memory"],
+    }),
+
+    register: builder.mutation({
+      query: (body: {
+        username: string;
+        email: string;
+        password: string;
+        phone?: string;
+      }) => ({
+        url: "/users/register/",
+        method: "POST",
+        body,
+      }),
+    }),
+
+    login: builder.mutation({
+      query: (body: { email: string; password: string }) => ({
+        url: "/users/login/",
+        method: "POST",
+        body,
+      }),
+    }),
+
+    getProfile: builder.query({
+      query: () => "/users/me/",
+    }),
+  }),
+});
+
+export const {
+  useGetMenuItemsQuery,
+  useGetOrdersQuery,
+  useGetOrderQuery,
+  useCreateOrderMutation,
+  useGetReservationsQuery,
+  useCreateReservationMutation,
+  useGetPaymentsQuery,
+  useCreatePaymentMutation,
+  useGetCustomerMemoryQuery,
+  useRegisterMutation,
+  useLoginMutation,
+  useGetProfileQuery,
+} = chatApi;
+
 export interface StreamCallbacks {
   onToken: (content: string) => void;
   onThinking: (content: string) => void;
@@ -57,15 +139,6 @@ export interface StreamCallbacks {
   onError: (detail: string) => void;
 }
 
-/**
- * Send a user message and stream the response via SSE.
- *
- * @param message - The user's message.
- * @param history - Optional conversation history.
- * @param conversationId - Server-side conversation identifier.
- * @param callbacks - Callbacks for streaming events.
- * @returns Cleanup function to abort the stream.
- */
 export function sendMessageStream(
   message: string,
   history?: ChatHistoryMessage[],
@@ -79,22 +152,29 @@ export function sendMessageStream(
   };
 
   const controller = new AbortController();
+  const token = localStorage.getItem("access_token");
 
   (async () => {
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "text/event-stream",
-        },
+        headers,
         body: JSON.stringify(body),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
-        const detail = errorBody?.detail ?? `Request failed with status ${response.status}`;
+        const detail =
+          errorBody?.detail ?? `Request failed with status ${response.status}`;
         callbacks?.onError(detail);
         return;
       }

@@ -43,12 +43,20 @@ export interface ApiError {
   detail: string;
 }
 
+/** Represents a goal in the agent's goal stack. */
+export interface GoalState {
+  description: string;
+  status: "pending" | "in_progress" | "completed" | "failed";
+  priority: string;
+  result: string;
+}
+
 /** SSE streaming event types from the backend. */
 export type StreamEvent =
   | { type: "token"; content: string }
   | { type: "thinking"; content: string }
   | { type: "tool_start"; tool: string; args: Record<string, unknown> }
   | { type: "tool_result"; tool: string; success: boolean; message: string }
-  | { type: "done"; response: string; steps: number }
+  | { type: "done"; response: string; steps: number; goals?: GoalState[] }
   | { type: "conversation_id"; conversation_id: string }
   | { type: "error"; detail: string };
