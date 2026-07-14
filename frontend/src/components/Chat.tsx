@@ -5,7 +5,7 @@ import { ChatInput } from "./ChatInput";
 import { ChatHistory } from "./ChatHistory";
 import { Sidebar } from "./Sidebar";
 import { sendMessageStream } from "../services/api";
-import type { Conversation, Message, ChatHistoryMessage } from "../types/chat";
+import type { Conversation, Message, ChatHistoryMessage, ActionRequired } from "../types/chat";
 import "./Chat.css";
 import "./ChatResponsive.css";
 
@@ -184,6 +184,7 @@ export function Chat() {
     abort: null,
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingActionRef = useRef<ActionRequired | null>(null);
   const user = useAppSelector((s) => s.auth.user);
   const activeConversation =
     conversations.find((conversation) => conversation.id === activeConversationId) ??
@@ -294,6 +295,7 @@ export function Chat() {
       const historySource = activeConversation.messages;
       setError(null);
       setIsHistoryOpen(false);
+      pendingActionRef.current = null;
 
       const userMsg: Message = {
         id: crypto.randomUUID(),
@@ -338,13 +340,18 @@ export function Chat() {
             status: "",
           }));
         },
+        onActionRequired(action, description, params) {
+          pendingActionRef.current = { action: action as ActionRequired["action"], description, params };
+        },
         onDone(response, convId) {
           const assistantMsg: Message = {
             id: crypto.randomUUID(),
             role: "assistant",
             content: response,
             timestamp: new Date(),
+            actionRequired: pendingActionRef.current ?? undefined,
           };
+          pendingActionRef.current = null;
 
           if (convId && convId !== conversationId) {
             setChatState((current) => ({
@@ -424,7 +431,12 @@ export function Chat() {
         )}
 
         {messages.map((msg) => (
-          <MessageComponent key={msg.id} message={msg} />
+          <MessageComponent
+            key={msg.id}
+            message={msg}
+            onSend={handleSend}
+            streaming={isLoading}
+          />
         ))}
 
         {isStreamThinking && (

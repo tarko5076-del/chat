@@ -134,6 +134,11 @@ export interface StreamCallbacks {
   onThinking: (content: string) => void;
   onToolStart: (tool: string, args: Record<string, unknown>) => void;
   onToolResult: (tool: string, success: boolean, message: string) => void;
+  onActionRequired: (
+    action: string,
+    description: string,
+    params: Record<string, unknown>,
+  ) => void;
   onDone: (response: string, conversationId: string) => void;
   onError: (detail: string) => void;
 }
@@ -217,6 +222,9 @@ export function sendMessageStream(
                 break;
               case "tool_result":
                 callbacks?.onToolResult(event.tool, event.success, event.message);
+                break;
+              case "action_required":
+                callbacks?.onActionRequired(event.action, event.description, event.params);
                 break;
               case "conversation_id":
                 conversationIdFromStream = event.conversation_id;

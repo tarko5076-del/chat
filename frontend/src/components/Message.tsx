@@ -1,15 +1,14 @@
 import type { Message as MessageType } from "../types/chat";
+import { ActionButtons } from "./ActionButtons";
 import "./Message.css";
 
 interface MessageProps {
   message: MessageType;
+  onSend?: (message: string) => void;
+  streaming?: boolean;
 }
 
-/**
- * Renders a single chat message bubble.
- * User messages appear on the right, assistant messages on the left.
- */
-export function Message({ message }: MessageProps) {
+export function Message({ message, onSend, streaming }: MessageProps) {
   const isUser = message.role === "user";
   const sentAt = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -26,6 +25,13 @@ export function Message({ message }: MessageProps) {
         <div className="message__bubble">
           <p className="message__text">{message.content}</p>
         </div>
+        {!isUser && message.actionRequired && onSend && (
+          <ActionButtons
+            action={message.actionRequired}
+            onSend={onSend}
+            disabled={streaming}
+          />
+        )}
       </div>
     </div>
   );

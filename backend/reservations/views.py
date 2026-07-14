@@ -1,5 +1,6 @@
 from rest_framework import permissions, viewsets
 
+from .cleanup import periodic_hold_cleanup
 from .models import Reservation
 from .serializers import ReservationSerializer, ReservationCreateSerializer
 
@@ -7,6 +8,10 @@ from .serializers import ReservationSerializer, ReservationCreateSerializer
 class ReservationViewSet(viewsets.ModelViewSet):
     queryset = Reservation.objects.all()
     permission_classes = [permissions.AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        periodic_hold_cleanup()
+        return super().list(request, *args, **kwargs)
 
     def get_serializer_class(self):
         if self.action == "create":

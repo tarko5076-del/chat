@@ -307,6 +307,16 @@ class ReActLoop:
                     "message": result.message,
                 }
 
+                if result.data and result.data.get("confirmation_required"):
+                    action_type = self._detect_action_type(func_name, result)
+                    if action_type:
+                        yield {
+                            "type": "action_required",
+                            "action": action_type,
+                            "description": result.message,
+                            "params": result.data,
+                        }
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
@@ -352,6 +362,17 @@ class ReActLoop:
         if self._tool_trace_callback:
             self._tool_trace_callback(name, args, result)
         return result
+
+    def _detect_action_type(self, tool_name: str, result: ToolResult) -> str | None:
+        if tool_name == "process_payment" and result.data and result.data.get("confirmation_required"):
+            return "confirm_payment"
+        if tool_name == "manage_order" and result.data and result.data.get("confirmation_required"):
+            return "confirm_order"
+        if tool_name == "manage_reservation" and result.data and result.data.get("reservation"):
+            reservation = result.data["reservation"]
+            if reservation.get("status") == "held":
+                return "confirm_reservation"
+        return None
 
     def _user_requests_planning(self, message: str) -> bool:
         indicators = ["and", "&", "also", "plus", "then", "after that", "as well as"]

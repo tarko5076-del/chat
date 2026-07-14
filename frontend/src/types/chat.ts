@@ -4,6 +4,14 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  actionRequired?: ActionRequired;
+}
+
+/** Action metadata when the agent requires user confirmation. */
+export interface ActionRequired {
+  action: "confirm_order" | "confirm_payment" | "confirm_reservation";
+  description: string;
+  params: Record<string, unknown>;
 }
 
 /** A locally managed conversation in the browser. */
@@ -57,6 +65,12 @@ export type StreamEvent =
   | { type: "thinking"; content: string }
   | { type: "tool_start"; tool: string; args: Record<string, unknown> }
   | { type: "tool_result"; tool: string; success: boolean; message: string }
+  | {
+      type: "action_required";
+      action: ActionRequired["action"];
+      description: string;
+      params: Record<string, unknown>;
+    }
   | { type: "done"; response: string; steps: number; goals?: GoalState[] }
   | { type: "conversation_id"; conversation_id: string }
   | { type: "error"; detail: string };
