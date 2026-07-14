@@ -1,11 +1,34 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type {
   ChatRequest,
-  ChatHistoryMessage,
   StreamEvent,
 } from "../types/chat";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
+
+export interface Session {
+  id: string;
+  user_id: string;
+  title: string;
+  metadata: Record<string, unknown>;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+export interface SessionMessage {
+  id: number;
+  session_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface SessionDetail extends Session {
+  messages: SessionMessage[];
+}
 
 export const chatApi = createApi({
   reducerPath: "chatApi",
@@ -19,7 +42,7 @@ export const chatApi = createApi({
       return headers;
     },
   }),
-  tagTypes: ["Menu", "Order", "Reservation", "Payment", "Memory", "StaffNotification", "ToolLog"],
+  tagTypes: ["Menu", "Order", "Reservation", "Payment", "Memory", "StaffNotification", "ToolLog", "Session"],
   endpoints: (builder) => ({
     getMenuItems: builder.query({
       query: () => "/menu/items/",
@@ -136,6 +159,45 @@ export const chatApi = createApi({
       }),
       providesTags: ["ToolLog"],
     }),
+
+    getSessions: builder.query({
+      query: (params?: { user_id?: string; include_archived?: boolean }) => ({
+        url: "/agent/sessions/",
+        params,
+      }),
+      providesTags: ["Session"],
+    }),
+
+    getSessionDetail: builder.query({
+      query: (sessionId: string) => `/agent/sessions/${sessionId}/`,
+      providesTags: ["Session"],
+    }),
+
+    createSession: builder.mutation({
+      query: (body: { user_id?: string; title?: string }) => ({
+        url: "/agent/sessions/",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Session"],
+    }),
+
+    updateSession: builder.mutation({
+      query: ({ id, ...body }: { id: string; title?: string; is_archived?: boolean }) => ({
+        url: `/agent/sessions/${id}/`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: ["Session"],
+    }),
+
+    deleteSession: builder.mutation({
+      query: (id: string) => ({
+        url: `/agent/sessions/${id}/`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Session"],
+    }),
   }),
 });
 
@@ -155,6 +217,11 @@ export const {
   useGetStaffNotificationsQuery,
   useUpdateStaffNotificationMutation,
   useGetToolLogsQuery,
+  useGetSessionsQuery,
+  useGetSessionDetailQuery,
+  useCreateSessionMutation,
+  useUpdateSessionMutation,
+  useDeleteSessionMutation,
 } = chatApi;
 
 export interface StreamCallbacks {
@@ -169,18 +236,21 @@ export interface StreamCallbacks {
   ) => void;
   onDone: (response: string, conversationId: string) => void;
   onError: (detail: string) => void;
+  onSessionId?: (sessionId: string) => void;
 }
 
 export function sendMessageStream(
   message: string,
-  history?: ChatHistoryMessage[],
-  conversationId?: string,
+  sessionId?: string,
+  customerId?: string,
+  customerName?: string,
   callbacks?: StreamCallbacks,
 ): () => void {
   const body: ChatRequest = {
     message,
-    history,
-    conversation_id: conversationId,
+    session_id: sessionId,
+    customer_id: customerId,
+    customer_name: customerName,
   };
 
   const controller = new AbortController();
@@ -219,7 +289,7 @@ export function sendMessageStream(
 
       const decoder = new TextDecoder();
       let buffer = "";
-      let conversationIdFromStream = conversationId ?? "";
+      let conversationIdFromStream = sessionId ?? "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -256,6 +326,9 @@ export function sendMessageStream(
                 break;
               case "conversation_id":
                 conversationIdFromStream = event.conversation_id;
+                break;
+              case "session_id":
+                callbacks?.onSessionId?.(event.session_id);
                 break;
               case "done":
                 callbacks?.onDone(event.response, conversationIdFromStream);

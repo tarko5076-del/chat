@@ -1,6 +1,7 @@
-node_modules/
-dist/
-.git/
+node_modules
+dist
+.git
 .gitignore
-tsconfig.tsbuildinfo
-.agents/
+*.log
+.env
+.env.*

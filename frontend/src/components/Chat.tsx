@@ -5,7 +5,7 @@ import { ChatInput } from "./ChatInput";
 import { ChatHistory } from "./ChatHistory";
 import { Sidebar } from "./Sidebar";
 import { sendMessageStream } from "../services/api";
-import type { Conversation, Message, ChatHistoryMessage, ActionRequired } from "../types/chat";
+import type { Conversation, Message, ActionRequired } from "../types/chat";
 import "./Chat.css";
 import "./ChatResponsive.css";
 
@@ -28,6 +28,8 @@ const toolDisplayNames: Record<string, string> = {
   calculate_bill: "Calculating bill",
   answer_faq: "Looking up information",
   process_payment: "Processing payment",
+  search_knowledge: "Searching knowledge base",
+  request_human_staff: "Contacting staff",
 };
 
 interface ChatState {
@@ -46,6 +48,7 @@ function createConversation(messages: Message[] = []): Conversation {
   const now = new Date();
   return {
     id: crypto.randomUUID(),
+    sessionId: null,
     title: getConversationTitle(messages),
     messages,
     createdAt: now,
@@ -109,6 +112,7 @@ function reviveConversation(conversation: unknown): Conversation | null {
 
   return {
     id: candidate.id,
+    sessionId: typeof candidate.sessionId === "string" ? candidate.sessionId : null,
     title:
       typeof candidate.title === "string" && candidate.title.trim() !== ""
         ? candidate.title
@@ -285,6 +289,25 @@ export function Chat() {
     localStorage.removeItem(legacyStorageKey);
   }
 
+  function handleSelectSession(sessionId: string) {
+    setError(null);
+    setIsSidebarOpen(false);
+    setStreaming({ isStreaming: false, content: "", status: "", abort: null });
+
+    const existing = conversations.find((c) => c.sessionId === sessionId);
+    if (existing) {
+      setChatState((current) => ({ ...current, activeConversationId: existing.id }));
+      return;
+    }
+
+    const conversation = createConversation();
+    conversation.sessionId = sessionId;
+    setChatState((current) => ({
+      conversations: [conversation, ...current.conversations],
+      activeConversationId: conversation.id,
+    }));
+  }
+
   const handleSend = useCallback(
     function handleSend(userMessage: string) {
       if (!activeConversation) {
@@ -292,7 +315,7 @@ export function Chat() {
       }
 
       const conversationId = activeConversation.id;
-      const historySource = activeConversation.messages;
+      const sessionId = activeConversation.sessionId;
       setError(null);
       setIsHistoryOpen(false);
       pendingActionRef.current = null;
@@ -304,79 +327,83 @@ export function Chat() {
         timestamp: new Date(),
       };
 
-      updateConversationMessages(conversationId, [...historySource, userMsg]);
+      updateConversationMessages(conversationId, [...activeConversation.messages, userMsg]);
       setIsLoading(true);
       setStreaming({ isStreaming: true, content: "", status: "Thinking...", abort: null });
 
-      const history: ChatHistoryMessage[] = historySource.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }));
+      const customerId = user?.id?.toString();
 
-      const abort = sendMessageStream(userMessage, history, conversationId, {
-        onToken(content) {
-          setStreaming((prev) => ({
-            ...prev,
-            content: prev.content + content,
-            status: "",
-          }));
-        },
-        onThinking(content) {
-          setStreaming((prev) => ({
-            ...prev,
-            status: content,
-          }));
-        },
-        onToolStart(tool) {
-          const displayName = toolDisplayNames[tool] ?? "Processing";
-          setStreaming((prev) => ({
-            ...prev,
-            status: `${displayName}...`,
-          }));
-        },
-        onToolResult(_tool, _success, _message) {
-          setStreaming((prev) => ({
-            ...prev,
-            status: "",
-          }));
-        },
-        onActionRequired(action, description, params) {
-          pendingActionRef.current = { action: action as ActionRequired["action"], description, params };
-        },
-        onDone(response, convId) {
-          const assistantMsg: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: response,
-            timestamp: new Date(),
-            actionRequired: pendingActionRef.current ?? undefined,
-          };
-          pendingActionRef.current = null;
-
-          if (convId && convId !== conversationId) {
+      const abort = sendMessageStream(
+        userMessage,
+        sessionId ?? undefined,
+        customerId,
+        user?.username,
+        {
+          onToken(content) {
+            setStreaming((prev) => ({
+              ...prev,
+              content: prev.content + content,
+              status: "",
+            }));
+          },
+          onThinking(content) {
+            setStreaming((prev) => ({
+              ...prev,
+              status: content,
+            }));
+          },
+          onToolStart(tool) {
+            const displayName = toolDisplayNames[tool] ?? "Processing";
+            setStreaming((prev) => ({
+              ...prev,
+              status: `${displayName}...`,
+            }));
+          },
+          onToolResult(_tool, _success, _message) {
+            setStreaming((prev) => ({
+              ...prev,
+              status: "",
+            }));
+          },
+          onActionRequired(action, description, params) {
+            pendingActionRef.current = { action: action as ActionRequired["action"], description, params };
+          },
+          onSessionId(newSessionId) {
             setChatState((current) => ({
               ...current,
-              activeConversationId: convId,
+              conversations: current.conversations.map((c) =>
+                c.id === conversationId ? { ...c, sessionId: newSessionId } : c,
+              ),
             }));
-          }
+          },
+          onDone(response, _convId) {
+            const assistantMsg: Message = {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: response,
+              timestamp: new Date(),
+              actionRequired: pendingActionRef.current ?? undefined,
+            };
+            pendingActionRef.current = null;
 
-          updateConversationMessages(
-            convId || conversationId,
-            [...historySource, userMsg, assistantMsg],
-          );
-          setStreaming({ isStreaming: false, content: "", status: "", abort: null });
-          setIsLoading(false);
+            updateConversationMessages(
+              conversationId,
+              [...activeConversation.messages, userMsg, assistantMsg],
+            );
+            setStreaming({ isStreaming: false, content: "", status: "", abort: null });
+            setIsLoading(false);
+          },
+          onError(detail) {
+            setError(detail);
+            setStreaming({ isStreaming: false, content: "", status: "", abort: null });
+            setIsLoading(false);
+          },
         },
-        onError(detail) {
-          setError(detail);
-          setStreaming({ isStreaming: false, content: "", status: "", abort: null });
-          setIsLoading(false);
-        },
-      });
+      );
 
       setStreaming((prev) => ({ ...prev, abort }));
     },
-    [activeConversation],
+    [activeConversation, user],
   );
 
   const isStreamActive = streaming.isStreaming && streaming.content.length > 0;
@@ -396,7 +423,12 @@ export function Chat() {
         onClearAll={clearAllConversations}
         onReplay={handleSend}
       />
-      <Sidebar open={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      <Sidebar
+        open={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        onSelectSession={handleSelectSession}
+        activeSessionId={activeConversation?.sessionId ?? undefined}
+      />
       <header className="chat__header">
         <button
           className="chat__icon-button"

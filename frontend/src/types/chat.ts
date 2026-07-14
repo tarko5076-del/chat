@@ -17,6 +17,7 @@ export interface ActionRequired {
 /** A locally managed conversation in the browser. */
 export interface Conversation {
   id: string;
+  sessionId: string | null;
   title: string;
   messages: Message[];
   createdAt: Date;
@@ -32,11 +33,11 @@ export interface ChatHistoryMessage {
 /** Request payload sent to the POST /chat endpoint. */
 export interface ChatRequest {
   message: string;
+  session_id?: string;
   customer_id?: string;
   customer_name?: string;
   email?: string;
   phone?: string;
-  conversation_id?: string;
   history?: ChatHistoryMessage[];
 }
 
@@ -73,4 +74,5 @@ export type StreamEvent =
     }
   | { type: "done"; response: string; steps: number; goals?: GoalState[] }
   | { type: "conversation_id"; conversation_id: string }
+  | { type: "session_id"; session_id: string }
   | { type: "error"; detail: string };

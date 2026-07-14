@@ -1,6 +1,10 @@
 from django.urls import path
 
-from agent.views import ChatView, ChatStreamView, CustomerMemoryView, StaffNotificationView, ToolCallLogView
+from agent.views import (
+    ChatView, ChatStreamView, CustomerMemoryView,
+    StaffNotificationView, ToolCallLogView,
+    SessionListView, SessionDetailView,
+)
 
 urlpatterns = [
     path("chat/", ChatView.as_view(), name="chat"),
@@ -9,4 +13,6 @@ urlpatterns = [
     path("staff-notifications/", StaffNotificationView.as_view(), name="staff-notifications"),
     path("staff-notifications/<int:notification_id>/", StaffNotificationView.as_view(), name="staff-notification-detail"),
     path("tool-logs/", ToolCallLogView.as_view(), name="tool-call-logs"),
+    path("sessions/", SessionListView.as_view(), name="session-list"),
+    path("sessions/<str:session_id>/", SessionDetailView.as_view(), name="session-detail"),
 ]

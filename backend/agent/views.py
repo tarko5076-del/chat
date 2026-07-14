@@ -10,6 +10,8 @@ from rest_framework.views import APIView
 from agent.controller import agent
 from agent.memory_manager import MemoryManager
 from agent.memory import ConversationMemory
+from agent.models import AgentSession, SessionMessage
+from agent.serializers import AgentSessionSerializer, AgentSessionDetailSerializer
 
 
 memory_manager = MemoryManager()
@@ -34,8 +36,25 @@ class ChatView(APIView):
         customer_name = request.data.get("customer_name")
         email = request.data.get("email")
         phone = request.data.get("phone")
-        conversation_id = request.data.get("conversation_id")
-        history = request.data.get("history", [])
+        session_id = request.data.get("session_id")
+
+        session = None
+        conversation_id = session_id
+
+        if session_id:
+            try:
+                session = AgentSession.objects.get(id=session_id)
+                history = [
+                    {"role": m.role, "content": m.content}
+                    for m in session.messages.all()
+                ]
+            except AgentSession.DoesNotExist:
+                return Response(
+                    {"detail": "Session not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        else:
+            history = []
 
         memory = ConversationMemory.from_history(history)
         if customer_name:
@@ -64,9 +83,24 @@ class ChatView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+        if not session:
+            session = AgentSession.objects.create(
+                user_id=customer_id or "anonymous",
+                title=message[:100] if len(message) > 100 else message,
+            )
+
+        SessionMessage.objects.create(session=session, role="user", content=message)
+        SessionMessage.objects.create(session=session, role="assistant", content=response_text)
+
+        if session.messages.count() <= 2:
+            title = message[:100] if len(message) > 100 else message
+            session.title = title
+            session.save(update_fields=["title", "updated_at"])
+
         return Response({
             "response": response_text,
-            "conversation_id": conversation_id,
+            "session_id": str(session.id),
+            "conversation_id": str(session.id),
         })
 
 
@@ -87,8 +121,25 @@ class ChatStreamView(APIView):
         customer_name = request.data.get("customer_name")
         email = request.data.get("email")
         phone = request.data.get("phone")
-        conversation_id = request.data.get("conversation_id")
-        history = request.data.get("history", [])
+        session_id = request.data.get("session_id")
+
+        session = None
+        conversation_id = session_id
+
+        if session_id:
+            try:
+                session = AgentSession.objects.get(id=session_id)
+                history = [
+                    {"role": m.role, "content": m.content}
+                    for m in session.messages.all()
+                ]
+            except AgentSession.DoesNotExist:
+                return Response(
+                    {"detail": "Session not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        else:
+            history = []
 
         def generate():
             try:
@@ -101,6 +152,8 @@ class ChatStreamView(APIView):
                     memory.phone = phone
 
                 import asyncio
+
+                final_response = ""
 
                 async def stream_events():
                     async for event in agent.run_stream(
@@ -118,13 +171,34 @@ class ChatStreamView(APIView):
                     while True:
                         try:
                             event = loop.run_until_complete(agen.__anext__())
+                            if event.get("type") == "done":
+                                final_response = event.get("response", "")
                             yield _format_sse(event)
                         except StopAsyncIteration:
                             break
                 finally:
                     loop.close()
 
-                yield _format_sse({"type": "conversation_id", "conversation_id": conversation_id})
+                if not session:
+                    session = AgentSession.objects.create(
+                        user_id=customer_id or "anonymous",
+                        title=message[:100] if len(message) > 100 else message,
+                    )
+
+                SessionMessage.objects.create(
+                    session=session, role="user", content=message,
+                )
+                SessionMessage.objects.create(
+                    session=session, role="assistant", content=final_response,
+                )
+
+                if session.messages.count() <= 2:
+                    title = message[:100] if len(message) > 100 else message
+                    session.title = title
+                    session.save(update_fields=["title", "updated_at"])
+
+                yield _format_sse({"type": "session_id", "session_id": str(session.id)})
+                yield _format_sse({"type": "conversation_id", "conversation_id": str(session.id)})
                 yield "data: [DONE]\n\n"
             except ValueError as error:
                 yield _format_sse({"type": "error", "detail": str(error)})
@@ -238,3 +312,78 @@ class ToolCallLogView(APIView):
                 for e in events
             ],
         })
+
+
+class SessionListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        user_id = request.query_params.get("user_id")
+        include_archived = request.query_params.get("include_archived", "false") == "true"
+
+        qs = AgentSession.objects.all()
+        if user_id:
+            qs = qs.filter(user_id=user_id)
+        if not include_archived:
+            qs = qs.filter(is_archived=False)
+
+        sessions = list(qs.order_by("-updated_at")[:50])
+        return Response({
+            "count": qs.count(),
+            "results": AgentSessionSerializer(sessions, many=True).data,
+        })
+
+    def post(self, request):
+        user_id = request.data.get("user_id", "anonymous")
+        title = request.data.get("title", "New chat")
+
+        session = AgentSession.objects.create(user_id=user_id, title=title)
+        return Response(
+            AgentSessionSerializer(session).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class SessionDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, session_id):
+        try:
+            session = AgentSession.objects.get(id=session_id)
+        except AgentSession.DoesNotExist:
+            return Response(
+                {"detail": "Session not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(AgentSessionDetailSerializer(session).data)
+
+    def patch(self, request, session_id):
+        try:
+            session = AgentSession.objects.get(id=session_id)
+        except AgentSession.DoesNotExist:
+            return Response(
+                {"detail": "Session not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        title = request.data.get("title")
+        is_archived = request.data.get("is_archived")
+
+        if title is not None:
+            session.title = title
+        if is_archived is not None:
+            session.is_archived = is_archived
+        session.save()
+
+        return Response(AgentSessionSerializer(session).data)
+
+    def delete(self, request, session_id):
+        try:
+            session = AgentSession.objects.get(id=session_id)
+        except AgentSession.DoesNotExist:
+            return Response(
+                {"detail": "Session not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        session.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

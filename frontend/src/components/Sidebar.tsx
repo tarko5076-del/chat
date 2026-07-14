@@ -8,12 +8,21 @@ import {
   useGetStaffNotificationsQuery,
   useUpdateStaffNotificationMutation,
   useGetToolLogsQuery,
+  useGetSessionsQuery,
+  useDeleteSessionMutation,
 } from "../services/api";
 import "./Sidebar.css";
 
-type Tab = "menu" | "orders" | "reservations" | "alerts" | "activity";
+type Tab = "menu" | "orders" | "reservations" | "alerts" | "activity" | "sessions";
 
-export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+interface SidebarProps {
+  open: boolean;
+  onClose: () => void;
+  onSelectSession?: (sessionId: string) => void;
+  activeSessionId?: string;
+}
+
+export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: SidebarProps) {
   const dispatch = useAppDispatch();
   const user = useAppSelector((s) => s.auth.user);
   const [tab, setTab] = useState<Tab>("menu");
@@ -78,6 +87,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           >
             Activity
           </button>
+          <button
+            className={`sidebar__tab ${tab === "sessions" ? "sidebar__tab--active" : ""}`}
+            onClick={() => setTab("sessions")}
+          >
+            Sessions
+          </button>
         </nav>
 
         <div className="sidebar__body">
@@ -95,6 +110,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           )}
           {tab === "activity" && (
             <ActivityPanel />
+          )}
+          {tab === "sessions" && (
+            <SessionsPanel onSelectSession={onSelectSession} activeSessionId={activeSessionId} />
           )}
         </div>
 
@@ -304,8 +322,53 @@ function ActivityPanel() {
               <span>{new Date(log.created_at).toLocaleTimeString()}</span>
             </div>
           </div>
-        ))}
+         ))}
       </div>
+    </div>
+  );
+}
+
+function SessionsPanel({
+  onSelectSession,
+  activeSessionId,
+}: {
+  onSelectSession?: (sessionId: string) => void;
+  activeSessionId?: string;
+}) {
+  const { data, isLoading } = useGetSessionsQuery(undefined);
+  const [deleteSession] = useDeleteSessionMutation();
+  const sessions = data?.results ?? [];
+
+  if (isLoading) return <div className="sidebar__loading">Loading sessions...</div>;
+  if (!sessions.length) return <div className="sidebar__empty">No conversations yet. Start chatting!</div>;
+
+  return (
+    <div className="sessions-panel">
+      {sessions.map((session: { id: string; title: string; message_count: number; updated_at: string }) => (
+        <div
+          key={session.id}
+          className={`sessions-panel__item ${activeSessionId === session.id ? "sessions-panel__item--active" : ""}`}
+          onClick={() => onSelectSession?.(session.id)}
+        >
+          <div className="sessions-panel__item-header">
+            <span className="sessions-panel__item-title">{session.title}</span>
+            <button
+              className="sessions-panel__delete"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteSession(session.id);
+              }}
+              aria-label="Delete session"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="sessions-panel__item-meta">
+            <span>{session.message_count} messages</span>
+            <span>{new Date(session.updated_at).toLocaleDateString()}</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
