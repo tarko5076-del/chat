@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
-import anthropic
+import openai
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -47,108 +47,33 @@ class StreamToolCallDelta:
 
 class LLMClient:
     def __init__(self) -> None:
-        self.enabled = bool(getattr(settings, "ANTHROPIC_API_KEY", ""))
-        self.model = getattr(
-            settings, "ANTHROPIC_MODEL", "claude-sonnet-4-20250514"
-        )
-        self.client = (
-            anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-            if self.enabled
-            else None
-        )
+        api_key = getattr(settings, "LLM_API_KEY", "")
+        base_url = getattr(settings, "LLM_BASE_URL", "")
+        self.enabled = bool(api_key)
+        self.model = getattr(settings, "LLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+
+        if self.enabled:
+            kwargs: dict[str, Any] = {"api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            self.client = openai.AsyncOpenAI(**kwargs)
+        else:
+            self.client = None
 
     @staticmethod
-    def _convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        converted = []
-        for tool in tools:
-            func = tool.get("function", tool)
-            converted.append({
-                "name": func["name"],
-                "description": func.get("description", ""),
-                "input_schema": func.get(
-                    "parameters", func.get("input_schema", {})
-                ),
-            })
-        return converted
+    def _parse_response(response: Any) -> CompletionResponse:
+        choice = response.choices[0]
+        message = choice.message
 
-    @staticmethod
-    def _convert_messages(
-        messages: list[dict[str, Any]],
-    ) -> tuple[str | None, list[dict[str, Any]]]:
-        system_parts: list[str] = []
-        anthropic_messages: list[dict[str, Any]] = []
-        i = 0
-
-        while i < len(messages):
-            msg = messages[i]
-            role = msg.get("role")
-
-            if role == "system":
-                system_parts.append(msg.get("content", ""))
-                i += 1
-
-            elif role == "assistant":
-                content_blocks: list[dict[str, Any]] = []
-                if msg.get("content"):
-                    content_blocks.append({
-                        "type": "text",
-                        "text": msg["content"],
-                    })
-                for tc in msg.get("tool_calls", []):
-                    args = tc["function"]["arguments"]
-                    if isinstance(args, str):
-                        try:
-                            args = json.loads(args)
-                        except (json.JSONDecodeError, TypeError):
-                            args = {}
-                    content_blocks.append({
-                        "type": "tool_use",
-                        "id": tc["id"],
-                        "name": tc["function"]["name"],
-                        "input": args,
-                    })
-                anthropic_messages.append({
-                    "role": "assistant",
-                    "content": content_blocks,
-                })
-                i += 1
-
-            elif role == "tool":
-                tool_results: list[dict[str, Any]] = []
-                while i < len(messages) and messages[i].get("role") == "tool":
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": messages[i]["tool_call_id"],
-                        "content": messages[i].get("content", ""),
-                    })
-                    i += 1
-                anthropic_messages.append({
-                    "role": "user",
-                    "content": tool_results,
-                })
-
-            else:
-                anthropic_messages.append(msg)
-                i += 1
-
-        system = "\n\n".join(system_parts) if system_parts else None
-        return system, anthropic_messages
-
-    @staticmethod
-    def _parse_response(
-        response: anthropic.types.Message,
-    ) -> CompletionResponse:
-        content_text: str | None = None
+        content_text = message.content or None
         tool_calls: list[ToolCallInfo] = []
 
-        for block in response.content:
-            if block.type == "text":
-                content_text = (content_text or "") + block.text
-            elif block.type == "tool_use":
+        if message.tool_calls:
+            for tc in message.tool_calls:
                 tool_calls.append(ToolCallInfo(
-                    id=block.id,
-                    name=block.name,
-                    arguments=json.dumps(block.input),
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=tc.function.arguments,
                 ))
 
         return CompletionResponse(content=content_text, tool_calls=tool_calls)
@@ -159,22 +84,19 @@ class LLMClient:
         tools: list[dict[str, Any]],
     ) -> CompletionResponse:
         if not self.client:
-            raise ValueError("No LLM API key configured.")
-
-        system, anthropic_messages = self._convert_messages(messages)
-        anthropic_tools = self._convert_tools(tools)
+            raise ValueError("No LLM API key configured. Set LLM_API_KEY in your environment.")
 
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "messages": anthropic_messages,
-            "tools": anthropic_tools,
+            "messages": messages,
             "temperature": 0.2,
             "max_tokens": 4096,
         }
-        if system:
-            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
 
-        response = await self.client.messages.create(**kwargs)
+        response = await self.client.chat.completions.create(**kwargs)
         return self._parse_response(response)
 
     async def complete_with_tools_stream(
@@ -183,63 +105,87 @@ class LLMClient:
         tools: list[dict[str, Any]],
     ) -> AsyncIterator[dict[str, Any]]:
         if not self.client:
-            raise ValueError("No LLM API key configured.")
-
-        system, anthropic_messages = self._convert_messages(messages)
-        anthropic_tools = self._convert_tools(tools)
+            raise ValueError("No LLM API key configured. Set LLM_API_KEY in your environment.")
 
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "messages": anthropic_messages,
-            "tools": anthropic_tools,
+            "messages": messages,
             "temperature": 0.2,
             "max_tokens": 4096,
+            "stream": True,
         }
-        if system:
-            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
 
         tool_calls_buffer: dict[int, StreamToolCallDelta] = {}
-        stop_reason: str | None = None
 
-        async with self.client.messages.stream(**kwargs) as stream:
-            async for event in stream:
-                if event.type == "content_block_start":
-                    block = event.content_block
-                    if block.type == "tool_use":
-                        tool_calls_buffer[event.index] = StreamToolCallDelta(
-                            index=event.index,
-                            id=block.id,
-                            function=StreamFunctionDelta(name=block.name),
+        stream = await self.client.chat.completions.create(**kwargs)
+        async for chunk in stream:
+            choice = chunk.choices[0] if chunk.choices else None
+            if not choice:
+                continue
+
+            delta = choice.delta
+            finish_reason = choice.finish_reason
+
+            if delta and delta.content:
+                yield {
+                    "delta": StreamDelta(content=delta.content),
+                    "finish_reason": None,
+                }
+
+            if delta and delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_buffer:
+                        tool_calls_buffer[idx] = StreamToolCallDelta(
+                            index=idx,
+                            id=tc_delta.id or "",
+                            function=StreamFunctionDelta(
+                                name=tc_delta.function.name if tc_delta.function else None,
+                                arguments="",
+                            ),
                         )
+                    else:
+                        if tc_delta.id:
+                            tool_calls_buffer[idx].id = tc_delta.id
 
-                elif event.type == "content_block_delta":
-                    delta = event.delta
-                    if delta.type == "text_delta":
-                        yield {
-                            "delta": StreamDelta(content=delta.text),
-                            "finish_reason": None,
-                        }
-                    elif delta.type == "input_json_delta":
-                        idx = event.index
-                        if idx in tool_calls_buffer:
-                            tc = tool_calls_buffer[idx]
-                            existing = tc.function.arguments or ""
-                            tc.function.arguments = existing + delta.partial_json
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            tool_calls_buffer[idx].function.name = tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            existing = tool_calls_buffer[idx].function.arguments or ""
+                            tool_calls_buffer[idx].function.arguments = (
+                                existing + tc_delta.function.arguments
+                            )
 
-                elif event.type == "message_delta":
-                    stop_reason = event.delta.stop_reason
+            if finish_reason:
+                assembled = [tool_calls_buffer[i] for i in sorted(tool_calls_buffer)]
+
+                if finish_reason == "tool_calls" and assembled:
+                    yield {
+                        "delta": StreamDelta(tool_calls=assembled),
+                        "finish_reason": "tool_calls",
+                    }
+                else:
+                    yield {
+                        "delta": StreamDelta(),
+                        "finish_reason": "stop",
+                    }
+                return
 
         assembled = [tool_calls_buffer[i] for i in sorted(tool_calls_buffer)]
-        finish = (
-            "tool_calls" if assembled and stop_reason == "tool_use" else "stop"
-        )
-
-        yield {
-            "delta": StreamDelta(
-                tool_calls=assembled if assembled else None,
-            ),
-            "finish_reason": finish,
-        }
+        if assembled:
+            yield {
+                "delta": StreamDelta(tool_calls=assembled),
+                "finish_reason": "tool_calls",
+            }
+        else:
+            yield {
+                "delta": StreamDelta(),
+                "finish_reason": "stop",
+            }
 
 
 def tool_arguments(raw: str | None) -> dict[str, Any]:

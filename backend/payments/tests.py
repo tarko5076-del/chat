@@ -84,7 +84,7 @@ class PaymentViewSetTest(APITestCase):
     def test_confirm_payment(self):
         payment = Payment.objects.create(
             order=self.order,
-            provider="card",
+            provider="cash",
             amount=self.order.total,
             status="pending",
         )

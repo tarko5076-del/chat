@@ -126,14 +126,20 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+RESTAURANT_PAYMENT_PHONE = os.getenv("RESTAURANT_PAYMENT_PHONE", "+254 700 123 456")
+
+TAX_RATE: float = 0.0825
+DELIVERY_FEE: float = 4.99
+
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api-inference.huggingface.co/v1")
+LLM_MODEL = os.getenv("LLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
 
-RESTAURANT_PAYMENT_PHONE = os.getenv("RESTAURANT_PAYMENT_PHONE", "+254 700 123 456")
+CHAPA_SECRET_KEY = os.getenv("CHAPA_SECRET_KEY", "")
+CHAPA_PUBLIC_KEY = os.getenv("CHAPA_PUBLIC_KEY", "")
 
-TAX_RATE: float = 0.0825
-DELIVERY_FEE: float = 4.99
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")

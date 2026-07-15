@@ -10,4 +10,5 @@ router.register(r"payments", views.PaymentViewSet, basename="payment")
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("webhook/chapa/", views.chapa_webhook, name="chapa-webhook"),
 ]

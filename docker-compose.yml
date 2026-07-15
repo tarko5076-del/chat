@@ -37,6 +37,9 @@ services:
       USE_SQLITE: "false"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-production}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api-inference.huggingface.co/v1}
+      LLM_MODEL: ${LLM_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
       interval: 30s

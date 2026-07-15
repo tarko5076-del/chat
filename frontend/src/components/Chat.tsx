@@ -466,8 +466,6 @@ export function Chat() {
           <MessageComponent
             key={msg.id}
             message={msg}
-            onSend={handleSend}
-            streaming={isLoading}
           />
         ))}
 

@@ -43,3 +43,16 @@
   color: #ff9fb5;
   transform: translateY(-2px);
 }
+
+.action-buttons__btn--pay {
+  border: 1px solid rgba(47, 221, 113, 0.6);
+  background: rgba(47, 221, 113, 0.18);
+  color: #2fdd71;
+  font-weight: 800;
+}
+
+.action-buttons__btn--pay:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 24px rgba(47, 221, 113, 0.3);
+  background: rgba(47, 221, 113, 0.28);
+}

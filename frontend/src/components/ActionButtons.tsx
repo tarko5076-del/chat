@@ -30,7 +30,29 @@ export function ActionButtons({ action, onSend, disabled }: ActionButtonsProps) 
   }
 
   if (action.action === "confirm_payment") {
-    const method = (action.params.payment_method as string) ?? "card";
+    const checkoutUrl = action.params.checkout_url as string | undefined;
+    const method = (action.params.payment_method as string) ?? "chapa";
+
+    if (checkoutUrl) {
+      return (
+        <div className="action-buttons">
+          <button
+            className="action-buttons__btn action-buttons__btn--pay"
+            onClick={() => window.open(checkoutUrl, "_blank", "noopener,noreferrer")}
+          >
+            Pay Now
+          </button>
+          <button
+            className="action-buttons__btn action-buttons__btn--cancel"
+            disabled={disabled}
+            onClick={() => onSend("Cancel the payment.")}
+          >
+            Cancel
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="action-buttons">
         <button

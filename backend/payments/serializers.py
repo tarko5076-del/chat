@@ -15,21 +15,33 @@ class PaymentSerializer(serializers.ModelSerializer):
             "order_id",
             "provider",
             "amount",
+            "currency",
             "status",
             "transaction_ref",
+            "chapa_tx_ref",
+            "checkout_url",
             "idempotency_key",
+            "customer_email",
+            "customer_name",
+            "failure_reason",
             "created_at",
+            "updated_at",
         ]
         read_only_fields = [
             "id",
             "transaction_ref",
+            "chapa_tx_ref",
+            "checkout_url",
             "created_at",
+            "updated_at",
         ]
 
 
 class PaymentCreateSerializer(serializers.Serializer):
     order_id = serializers.IntegerField()
     provider = serializers.ChoiceField(choices=Payment.PROVIDER_CHOICES)
+    customer_email = serializers.EmailField(required=False, default="")
+    customer_name = serializers.CharField(max_length=255, required=False, default="")
     idempotency_key = serializers.CharField(
         max_length=100, required=False, allow_blank=True, default=None,
     )
@@ -40,13 +52,14 @@ class PaymentCreateSerializer(serializers.Serializer):
         except Order.DoesNotExist:
             raise serializers.ValidationError("Order not found.")
 
-        if Payment.objects.filter(order=order, status="completed").exists():
-            raise serializers.ValidationError("This order has already been paid.")
-
-        if Payment.objects.filter(order=order, status="pending").exists():
-            raise serializers.ValidationError(
-                "A pending payment already exists for this order."
-            )
+        existing = Payment.objects.filter(order=order).first()
+        if existing:
+            if existing.status == "completed":
+                raise serializers.ValidationError("This order has already been paid.")
+            if existing.status in ("pending", "processing"):
+                raise serializers.ValidationError(
+                    "A pending payment already exists for this order."
+                )
 
         return value
 
@@ -69,5 +82,7 @@ class PaymentCreateSerializer(serializers.Serializer):
             provider=validated_data["provider"],
             amount=order.total,
             idempotency_key=validated_data.get("idempotency_key"),
+            customer_email=validated_data.get("customer_email", ""),
+            customer_name=validated_data.get("customer_name", ""),
         )
         return payment

@@ -135,21 +135,24 @@ class PaymentToolTest(TestCase):
         result = self.tool.execute(
             order_id=self.order.id,
             payment_method="bitcoin",
+            customer_email="test@test.com",
         )
         self.assertFalse(result.success)
-        self.assertIn("card", result.message)
+        self.assertIn("chapa", result.message)
 
     def test_payment_order_not_found(self):
         result = self.tool.execute(
             order_id=99999,
-            payment_method="card",
+            payment_method="chapa",
+            customer_email="test@test.com",
         )
         self.assertFalse(result.success)
 
     def test_payment_without_confirmation(self):
         result = self.tool.execute(
             order_id=self.order.id,
-            payment_method="card",
+            payment_method="cash",
+            customer_email="test@test.com",
         )
         self.assertFalse(result.success)
         self.assertEqual(result.next_action, "awaiting_confirmation")
@@ -157,7 +160,8 @@ class PaymentToolTest(TestCase):
     def test_payment_with_confirmation(self):
         result = self.tool.execute(
             order_id=self.order.id,
-            payment_method="card",
+            payment_method="cash",
+            customer_email="test@test.com",
             confirmed=True,
         )
         self.assertTrue(result.success)
@@ -169,7 +173,8 @@ class PaymentToolTest(TestCase):
         key = "idem-key-001"
         result1 = self.tool.execute(
             order_id=self.order.id,
-            payment_method="card",
+            payment_method="cash",
+            customer_email="test@test.com",
             confirmed=True,
             idempotency_key=key,
         )
@@ -177,7 +182,8 @@ class PaymentToolTest(TestCase):
 
         result2 = self.tool.execute(
             order_id=self.order.id,
-            payment_method="card",
+            payment_method="cash",
+            customer_email="test@test.com",
             confirmed=True,
             idempotency_key=key,
         )
