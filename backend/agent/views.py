@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 from agent.controller import agent
@@ -17,12 +18,17 @@ from agent.serializers import AgentSessionSerializer, AgentSessionDetailSerializ
 memory_manager = MemoryManager()
 
 
+class ChatStreamThrottle(AnonRateThrottle):
+    rate = "15/minute"
+
+
 def _format_sse(event: dict) -> str:
     return f"data: {json.dumps(event, default=str)}\n\n"
 
 
 class ChatView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ChatStreamThrottle]
 
     def post(self, request):
         message = request.data.get("message", "").strip()
@@ -106,6 +112,7 @@ class ChatView(APIView):
 
 class ChatStreamView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ChatStreamThrottle]
 
     def post(self, request):
         from django.http import StreamingHttpResponse

@@ -47,6 +47,7 @@ class ChapaClient:
         last_name: str,
         tx_ref: str,
         callback_url: str,
+        return_url: str = "",
         currency: str = "ETB",
         description: str = "Restaurant payment",
     ) -> ChapaInitResponse:
@@ -66,6 +67,8 @@ class ChapaClient:
             "callback_url": callback_url,
             "description": description,
         }
+        if return_url:
+            payload["return_url"] = return_url
 
         try:
             response = httpx.post(

@@ -112,6 +112,16 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "60/minute",
+        "user": "120/minute",
+        "chat_stream": "15/minute",
+        "payment_webhook": "30/minute",
+    },
 }
 
 SIMPLE_JWT = {
@@ -134,6 +144,9 @@ DELIVERY_FEE: float = 4.99
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api-inference.huggingface.co/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+LLM_FALLBACK_API_KEY = os.getenv("LLM_FALLBACK_API_KEY", "")
+LLM_FALLBACK_BASE_URL = os.getenv("LLM_FALLBACK_BASE_URL", "")
+LLM_FALLBACK_MODEL = os.getenv("LLM_FALLBACK_MODEL", "")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -143,3 +156,6 @@ CHAPA_SECRET_KEY = os.getenv("CHAPA_SECRET_KEY", "")
 CHAPA_PUBLIC_KEY = os.getenv("CHAPA_PUBLIC_KEY", "")
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@restaurant-agent.com")

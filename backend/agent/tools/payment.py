@@ -154,6 +154,10 @@ class PaymentTool(BaseTool):
             order.status = "paid"
             order.payment_method = "cash"
             order.save()
+
+            from agent.email_service import send_payment_confirmation
+            send_payment_confirmation(payment)
+
             return ToolResult(
                 success=True,
                 message=(
@@ -189,6 +193,7 @@ class PaymentTool(BaseTool):
         from django.conf import settings as django_settings
         base_url = getattr(django_settings, "FRONTEND_BASE_URL", "http://localhost")
         callback_url = f"{base_url}/api/payments/webhook/chapa/"
+        return_url = f"{base_url}/payment/result"
 
         email = kwargs["customer_email"]
         name = kwargs.get("customer_name", "Customer")
@@ -203,6 +208,7 @@ class PaymentTool(BaseTool):
             last_name=last_name,
             tx_ref=payment.transaction_ref,
             callback_url=callback_url,
+            return_url=return_url,
         )
 
         if init_result.success:

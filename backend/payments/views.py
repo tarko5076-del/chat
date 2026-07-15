@@ -1,8 +1,11 @@
 import hashlib
 import hmac
+import json
 import logging
+import time
 
 from django.conf import settings
+from django.core.cache import cache
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -16,6 +19,10 @@ from .models import Payment
 from .serializers import PaymentCreateSerializer, PaymentSerializer
 
 logger = logging.getLogger(__name__)
+
+_WEBHOOK_TIMESTAMP_MAX_AGE = 300
+_WEBHOOK_RATE_LIMIT = 10
+_WEBHOOK_RATE_WINDOW = 60
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
@@ -120,12 +127,31 @@ class PaymentViewSet(viewsets.ModelViewSet):
         })
 
 
+def _verify_chapa_signature(body_bytes: bytes) -> bool:
+    """Verify webhook authenticity by calling Chapa's verify endpoint."""
+    try:
+        body = json.loads(body_bytes)
+    except (json.JSONDecodeError, ValueError):
+        return False
+
+    tx_ref = body.get("tx_ref")
+    if not tx_ref:
+        return False
+
+    verify_result = chapa_client.verify_payment(tx_ref)
+    return verify_result.success and verify_result.status == body.get("status")
+
+
 @csrf_exempt
 @require_POST
 def chapa_webhook(request):
-    """Handle Chapa payment callback webhook."""
+    """Handle Chapa payment callback webhook.
+
+    Security: After basic format validation, we verify the payment status
+    by calling Chapa's verify endpoint before trusting the payload.
+    This prevents forged webhooks from marking payments as complete.
+    """
     try:
-        import json
         body = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
         return HttpResponseBadRequest("Invalid JSON")
@@ -136,6 +162,14 @@ def chapa_webhook(request):
     if not tx_ref:
         return HttpResponseBadRequest("Missing tx_ref")
 
+    ip = request.META.get("REMOTE_ADDR", "unknown")
+    rate_key = f"chapa_webhook:{ip}"
+    hits = cache.get(rate_key, 0)
+    if hits >= _WEBHOOK_RATE_LIMIT:
+        logger.warning("Chapa webhook rate limit exceeded for %s", ip)
+        return HttpResponse(status=429)
+    cache.set(rate_key, hits + 1, _WEBHOOK_RATE_WINDOW)
+
     logger.info("Chapa webhook received: tx_ref=%s status=%s", tx_ref, status_str)
 
     try:
@@ -143,6 +177,22 @@ def chapa_webhook(request):
     except Payment.DoesNotExist:
         logger.warning("Chapa webhook for unknown tx_ref: %s", tx_ref)
         return HttpResponse(status=200)
+
+    verify_result = chapa_client.verify_payment(tx_ref)
+    if not verify_result.success:
+        logger.warning(
+            "Chapa webhook verification failed for tx_ref=%s: %s",
+            tx_ref, verify_result.error,
+        )
+        return HttpResponse(status=200)
+
+    verified_status = verify_result.status
+    if verified_status != status_str:
+        logger.warning(
+            "Chapa webhook status mismatch: payload=%s verified=%s tx_ref=%s",
+            status_str, verified_status, tx_ref,
+        )
+        status_str = verified_status
 
     if status_str == "success":
         payment.status = "completed"

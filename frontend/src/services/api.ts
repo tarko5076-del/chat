@@ -89,11 +89,16 @@ export const chatApi = createApi({
     }),
 
     getPayments: builder.query({
-      query: (params?: { order_id?: number; status?: string }) => ({
+      query: (params?: { order_id?: number; status?: string; tx_ref?: string }) => ({
         url: "/payments/",
         params,
       }),
       providesTags: ["Payment"],
+    }),
+
+    checkPaymentStatus: builder.query({
+      query: (id: number) => `/payments/${id}/check_status/`,
+      providesTags: (_result, _error, id) => [{ type: "Payment", id }],
     }),
 
     createPayment: builder.mutation({
@@ -209,6 +214,7 @@ export const {
   useGetReservationsQuery,
   useCreateReservationMutation,
   useGetPaymentsQuery,
+  useCheckPaymentStatusQuery,
   useCreatePaymentMutation,
   useGetCustomerMemoryQuery,
   useRegisterMutation,

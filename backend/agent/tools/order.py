@@ -161,6 +161,9 @@ class OrderTool(BaseTool):
                     price=float(item["price"]),
                 )
 
+        from agent.email_service import send_order_confirmation
+        send_order_confirmation(order)
+
         return ToolResult(
             success=True,
             message=f"Order created. ID: {order.id}.",
