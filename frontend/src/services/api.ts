@@ -245,6 +245,9 @@ export interface StreamCallbacks {
   onSessionId?: (sessionId: string) => void;
 }
 
+const MAX_STREAM_RETRIES = 2;
+const STREAM_RETRY_DELAY_MS = 1500;
+
 export function sendMessageStream(
   message: string,
   sessionId?: string,
@@ -252,17 +255,19 @@ export function sendMessageStream(
   customerName?: string,
   callbacks?: StreamCallbacks,
 ): () => void {
-  const body: ChatRequest = {
-    message,
-    session_id: sessionId,
-    customer_id: customerId,
-    customer_name: customerName,
-  };
-
   const controller = new AbortController();
-  const token = localStorage.getItem("access_token");
+  let retryCount = 0;
 
-  (async () => {
+  async function attemptStream() {
+    const body: ChatRequest = {
+      message,
+      session_id: sessionId,
+      customer_id: customerId,
+      customer_name: customerName,
+    };
+
+    const token = localStorage.getItem("access_token");
+
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -338,10 +343,10 @@ export function sendMessageStream(
                 break;
               case "done":
                 callbacks?.onDone(event.response, conversationIdFromStream);
-                break;
+                return;
               case "error":
                 callbacks?.onError(event.detail);
-                break;
+                return;
             }
           } catch {
             // Skip malformed JSON lines
@@ -352,10 +357,27 @@ export function sendMessageStream(
       if (err instanceof DOMException && err.name === "AbortError") {
         return;
       }
+
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof DOMException && err.name === "NetworkError") ||
+        (err instanceof Error && err.message.includes("fetch"));
+
+      if (isNetworkError && retryCount < MAX_STREAM_RETRIES) {
+        retryCount++;
+        callbacks?.onThinking(`Reconnecting... (attempt ${retryCount})`);
+        await new Promise((r) => setTimeout(r, STREAM_RETRY_DELAY_MS * retryCount));
+        if (!controller.signal.aborted) {
+          return attemptStream();
+        }
+      }
+
       const message = err instanceof Error ? err.message : "Stream failed";
       callbacks?.onError(message);
     }
-  })();
+  }
+
+  attemptStream();
 
   return () => controller.abort();
 }

@@ -1,7 +1,11 @@
+import logging
+
 from agent.tools.base import BaseTool, ToolResult
 from orders.models import Order
 from payments.models import Payment
 from payments.chapa_client import chapa_client
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentTool(BaseTool):
@@ -155,6 +159,8 @@ class PaymentTool(BaseTool):
             order.payment_method = "cash"
             order.save()
 
+            logger.info("order_id=%s payment_method=cash status=completed", order.id)
+
             from agent.email_service import send_payment_confirmation
             send_payment_confirmation(payment)
 
@@ -217,6 +223,8 @@ class PaymentTool(BaseTool):
             payment.status = "processing"
             payment.save(update_fields=["chapa_tx_ref", "checkout_url", "status"])
 
+            logger.info("order_id=%s payment_method=%s tx_ref=%s status=processing", order.id, method, payment.transaction_ref)
+
             return ToolResult(
                 success=True,
                 message=(
@@ -244,6 +252,8 @@ class PaymentTool(BaseTool):
             payment.status = "failed"
             payment.failure_reason = init_result.error or "Chapa init failed"
             payment.save(update_fields=["status", "failure_reason"])
+
+            logger.warning("order_id=%s payment_method=%s status=failed error=%s", order.id, method, init_result.error)
 
             return ToolResult(
                 success=False,

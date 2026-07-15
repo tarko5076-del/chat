@@ -1,5 +1,9 @@
+import logging
+
 from agent.tools.base import BaseTool, ToolResult, TAX_RATE
 from orders.models import Order
+
+logger = logging.getLogger(__name__)
 
 
 class BillingTool(BaseTool):

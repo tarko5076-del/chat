@@ -1,0 +1,29 @@
+.countdown {
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #2fdd71;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(47, 221, 113, 0.08);
+  border: 1px solid rgba(47, 221, 113, 0.2);
+}
+
+.countdown--urgent {
+  color: #ffc107;
+  background: rgba(255, 193, 7, 0.08);
+  border-color: rgba(255, 193, 7, 0.2);
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+.countdown--expired {
+  color: #ff7194;
+  background: rgba(255, 113, 148, 0.08);
+  border-color: rgba(255, 113, 148, 0.2);
+  animation: none;
+}
+
+@keyframes countdown-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}

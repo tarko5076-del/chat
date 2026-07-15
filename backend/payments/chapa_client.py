@@ -80,6 +80,7 @@ class ChapaClient:
             data = response.json()
 
             if response.status_code == 200 and data.get("status") == "success":
+                logger.info("chapa_init tx_ref=%s amount=%.2f currency=%s status=success", tx_ref, amount, currency)
                 return ChapaInitResponse(
                     success=True,
                     checkout_url=data["data"]["checkout_url"],
@@ -111,6 +112,7 @@ class ChapaClient:
 
             if response.status_code == 200 and data.get("status") == "success":
                 tx_data = data.get("data", {})
+                logger.info("chapa_verify tx_ref=%s status=%s amount=%.2f", tx_ref, tx_data.get("status"), float(tx_data.get("amount", 0)))
                 return ChapaVerifyResponse(
                     success=True,
                     status=tx_data.get("status"),

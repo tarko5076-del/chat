@@ -108,6 +108,7 @@
 .sidebar__tab {
   flex: 1;
   padding: 14px 8px;
+  min-height: 44px;
   border: none;
   border-bottom: 2px solid transparent;
   background: none;
@@ -398,6 +399,7 @@
 .alerts-panel__btn {
   flex: 1;
   padding: 8px 12px;
+  min-height: 44px;
   border-radius: 8px;
   font-size: 0.78rem;
   font-weight: 700;
@@ -572,5 +574,15 @@
 @media (max-width: 600px) {
   .sidebar {
     width: 100vw;
+  }
+
+  .sidebar__tabs {
+    flex-wrap: wrap;
+  }
+
+  .sidebar__tab {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    font-size: 0.72rem;
   }
 }

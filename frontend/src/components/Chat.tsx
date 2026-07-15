@@ -411,6 +411,9 @@ export function Chat() {
 
   return (
     <div className="chat">
+      <a href="#chat-input-field" className="skip-link">
+        Skip to chat input
+      </a>
       <ChatHistory
         isOpen={isHistoryOpen}
         conversations={conversations}
@@ -451,7 +454,7 @@ export function Chat() {
         </button>
       </header>
 
-      <div className="chat__messages">
+      <div className="chat__messages" role="log" aria-label="Chat messages" aria-live="polite">
         {messages.length === 0 && !isStreamActive && !isStreamThinking && (
           <div className="chat__welcome">
             <div className="chat__welcome-label">RESTO CORE</div>
@@ -475,7 +478,7 @@ export function Chat() {
               <div className="message__meta">
                 <span className="message__label">RESTO CORE</span>
               </div>
-              <div className="message__bubble message__bubble--thinking">
+              <div className="message__bubble message__bubble--thinking" role="status" aria-label="Assistant is typing">
                 <div className="chat__typing-indicator">
                   <span></span>
                   <span></span>
@@ -509,7 +512,7 @@ export function Chat() {
         )}
 
         {error && (
-          <div className="chat__error">
+          <div className="chat__error" role="alert">
             <p>{error}</p>
           </div>
         )}

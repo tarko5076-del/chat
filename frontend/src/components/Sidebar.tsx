@@ -11,6 +11,7 @@ import {
   useGetSessionsQuery,
   useDeleteSessionMutation,
 } from "../services/api";
+import { CountdownTimer } from "./CountdownTimer";
 import "./Sidebar.css";
 
 type Tab = "menu" | "orders" | "reservations" | "alerts" | "activity" | "sessions";
@@ -28,8 +29,8 @@ export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: Sid
   const [tab, setTab] = useState<Tab>("menu");
 
   const { data: menuItems, isLoading: menuLoading } = useGetMenuItemsQuery(undefined);
-  const { data: ordersData, isLoading: ordersLoading } = useGetOrdersQuery(undefined);
-  const { data: reservationsData, isLoading: reservationsLoading } = useGetReservationsQuery(undefined);
+  const { data: ordersData, isLoading: ordersLoading } = useGetOrdersQuery(undefined, { pollingInterval: 10000 });
+  const { data: reservationsData, isLoading: reservationsLoading, refetch: refetchReservations } = useGetReservationsQuery(undefined, { pollingInterval: 15000 });
   const { data: notificationsData } = useGetStaffNotificationsQuery({ status: "pending" });
 
   const orders = ordersData?.results ?? [];
@@ -38,8 +39,8 @@ export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: Sid
 
   return (
     <>
-      {open && <div className="sidebar-backdrop" onClick={onClose} />}
-      <aside className={`sidebar ${open ? "sidebar--open" : ""}`}>
+      {open && <div className="sidebar-backdrop" onClick={onClose} aria-hidden="true" />}
+      <aside className={`sidebar ${open ? "sidebar--open" : ""}`} role="dialog" aria-modal="true" aria-label="Sidebar navigation">
         <div className="sidebar__header">
           <div className="sidebar__user">
             <span className="sidebar__user-icon">{user?.username?.[0]?.toUpperCase() ?? "?"}</span>
@@ -53,41 +54,59 @@ export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: Sid
           </button>
         </div>
 
-        <nav className="sidebar__tabs">
+        <nav className="sidebar__tabs" role="tablist" aria-label="Sidebar tabs">
           <button
+            role="tab"
+            aria-selected={tab === "menu"}
+            aria-controls="sidebar-panel-menu"
             className={`sidebar__tab ${tab === "menu" ? "sidebar__tab--active" : ""}`}
             onClick={() => setTab("menu")}
           >
             Menu
           </button>
           <button
+            role="tab"
+            aria-selected={tab === "orders"}
+            aria-controls="sidebar-panel-orders"
             className={`sidebar__tab ${tab === "orders" ? "sidebar__tab--active" : ""}`}
             onClick={() => setTab("orders")}
           >
             Orders
           </button>
           <button
+            role="tab"
+            aria-selected={tab === "reservations"}
+            aria-controls="sidebar-panel-reservations"
             className={`sidebar__tab ${tab === "reservations" ? "sidebar__tab--active" : ""}`}
             onClick={() => setTab("reservations")}
           >
             Reservations
           </button>
           <button
+            role="tab"
+            aria-selected={tab === "alerts"}
+            aria-controls="sidebar-panel-alerts"
             className={`sidebar__tab sidebar__tab--alerts ${tab === "alerts" ? "sidebar__tab--active" : ""}`}
             onClick={() => setTab("alerts")}
           >
             Alerts
             {pendingCount > 0 && (
-              <span className="sidebar__badge">{pendingCount}</span>
+              <span className="sidebar__badge" aria-label={`${pendingCount} pending alerts`}>{pendingCount}</span>
             )}
           </button>
           <button
+            role="tab"
+            aria-selected={tab === "activity"}
+            aria-controls="sidebar-panel-activity"
             className={`sidebar__tab ${tab === "activity" ? "sidebar__tab--active" : ""}`}
             onClick={() => setTab("activity")}
           >
             Activity
           </button>
           <button
+            role="tab"
+            aria-selected={tab === "sessions"}
+            aria-controls="sidebar-panel-sessions"
             className={`sidebar__tab ${tab === "sessions" ? "sidebar__tab--active" : ""}`}
             onClick={() => setTab("sessions")}
           >
@@ -97,22 +116,34 @@ export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: Sid
 
         <div className="sidebar__body">
           {tab === "menu" && (
-            <MenuPanel items={menuItems} loading={menuLoading} />
+            <div id="sidebar-panel-menu" role="tabpanel" aria-label="Menu">
+              <MenuPanel items={menuItems} loading={menuLoading} />
+            </div>
           )}
           {tab === "orders" && (
-            <OrdersPanel orders={orders} loading={ordersLoading} />
+            <div id="sidebar-panel-orders" role="tabpanel" aria-label="Orders">
+              <OrdersPanel orders={orders} loading={ordersLoading} />
+            </div>
           )}
           {tab === "reservations" && (
-            <ReservationsPanel reservations={reservations} loading={reservationsLoading} />
+            <div id="sidebar-panel-reservations" role="tabpanel" aria-label="Reservations">
+              <ReservationsPanel reservations={reservations} loading={reservationsLoading} onRefetch={refetchReservations} />
+            </div>
           )}
           {tab === "alerts" && (
-            <AlertsPanel />
+            <div id="sidebar-panel-alerts" role="tabpanel" aria-label="Staff alerts">
+              <AlertsPanel />
+            </div>
           )}
           {tab === "activity" && (
-            <ActivityPanel />
+            <div id="sidebar-panel-activity" role="tabpanel" aria-label="Activity">
+              <ActivityPanel />
+            </div>
           )}
           {tab === "sessions" && (
-            <SessionsPanel onSelectSession={onSelectSession} activeSessionId={activeSessionId} />
+            <div id="sidebar-panel-sessions" role="tabpanel" aria-label="Sessions">
+              <SessionsPanel onSelectSession={onSelectSession} activeSessionId={activeSessionId} />
+            </div>
           )}
         </div>
 
@@ -242,9 +273,11 @@ function OrdersPanel({
 function ReservationsPanel({
   reservations,
   loading,
+  onRefetch,
 }: {
-  reservations: Array<{ id: number; status: string; party_size: number; reservation_time: string }>;
+  reservations: Array<{ id: number; status: string; party_size: number; reservation_time: string; held_until: string | null }>;
   loading: boolean;
+  onRefetch?: () => void;
 }) {
   if (loading) return <div className="sidebar__loading">Loading reservations...</div>;
   if (!reservations.length) return <div className="sidebar__empty">No reservations yet.</div>;
@@ -261,6 +294,9 @@ function ReservationsPanel({
           </div>
           <div className="reservations-panel__item-meta">
             <span>{new Date(res.reservation_time).toLocaleString()}</span>
+            {res.status === "held" && res.held_until && (
+              <CountdownTimer expiresAt={res.held_until} onExpired={onRefetch} />
+            )}
           </div>
         </div>
       ))}

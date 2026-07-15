@@ -1,3 +1,4 @@
+import logging
 from datetime import date, time, timedelta
 
 from django.db import transaction
@@ -5,6 +6,8 @@ from django.utils import timezone
 
 from agent.tools.base import BaseTool, ToolResult
 from reservations.models import Reservation, MAX_PARTY_SIZE, MAX_RESERVATIONS_PER_SLOT, OPENING_HOUR, CLOSING_HOUR, RESERVATION_HOLD_MINUTES
+
+logger = logging.getLogger(__name__)
 
 
 class ReservationTool(BaseTool):
@@ -136,6 +139,7 @@ class ReservationTool(BaseTool):
             "reservation_time": reservation.reservation_time.strftime("%H:%M"),
             "party_size": reservation.party_size,
         }
+        logger.info("action=create reservation_id=%d party_size=%d date=%s time=%s status=held", reservation.id, party_size, res_date, res_time)
         return ToolResult(
             success=True,
             message=(
@@ -260,6 +264,7 @@ class ReservationTool(BaseTool):
             reservation.status = "confirmed"
             reservation.held_until = None
             reservation.save(update_fields=["status", "held_until"])
+            logger.info("action=confirm reservation_id=%d status=confirmed", reservation.id)
 
         return ToolResult(
             success=True,
@@ -278,6 +283,7 @@ class ReservationTool(BaseTool):
             return reservation
         reservation.status = "cancelled"
         reservation.save()
+        logger.info("action=cancel reservation_id=%d status=cancelled", reservation.id)
         return ToolResult(
             success=True,
             message=f"Reservation {reservation.id} has been cancelled.",
@@ -376,8 +382,7 @@ class ReservationTool(BaseTool):
         )
         count = expired.update(status="cancelled")
         if count:
-            from reservations.models import logger as reservations_logger
-            reservations_logger.info(
+            logging.getLogger(__name__).info(
                 "Released %d expired holds for %s %s",
                 count, reservation_date, reservation_time,
             )

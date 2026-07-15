@@ -23,8 +23,12 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   }
 
   return (
-    <form className="chat-input" onSubmit={handleSubmit}>
+    <form className="chat-input" onSubmit={handleSubmit} role="search" aria-label="Send a message">
+      <label htmlFor="chat-input-field" className="sr-only">
+        Type your message
+      </label>
       <input
+        id="chat-input-field"
         className="chat-input__field"
         type="text"
         value={inputValue}
@@ -32,11 +36,13 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         placeholder="Ask about menus, reservations, or bills"
         disabled={disabled}
         autoFocus
+        aria-label="Type your message"
       />
       <button
         className="chat-input__button"
         type="submit"
         disabled={disabled || inputValue.trim() === ""}
+        aria-label="Send message"
       >
         <span aria-hidden="true"></span>
       </button>

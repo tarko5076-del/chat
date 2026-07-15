@@ -96,3 +96,18 @@
   border-color: rgba(47, 221, 113, 0.4);
   color: #2fdd71;
 }
+
+@media (max-width: 460px) {
+  .payment-result__card {
+    padding: 32px 24px;
+  }
+
+  .payment-result__card h2 {
+    font-size: 1.15rem;
+  }
+
+  .payment-result__btn {
+    width: 100%;
+    min-height: 44px;
+  }
+}

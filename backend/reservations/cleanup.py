@@ -29,4 +29,5 @@ def periodic_hold_cleanup() -> None:
                 "Periodic cleanup released %d expired hold(s)", count
             )
     except Exception:
-        pass
+        import logging
+        logging.getLogger("reservations").exception("Periodic hold cleanup failed")

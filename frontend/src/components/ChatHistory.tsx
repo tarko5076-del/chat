@@ -45,7 +45,7 @@ export function ChatHistory({
         aria-label="Close history"
         onClick={onClose}
       />
-      <aside className={`history-panel ${isOpen ? "history-panel--open" : ""}`}>
+      <aside className={`history-panel ${isOpen ? "history-panel--open" : ""}`} role="dialog" aria-modal="true" aria-label="Chat history">
         <div className="history-panel__header">
           <div>
             <p className="history-panel__eyebrow">CHAT LOG</p>

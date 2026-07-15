@@ -45,6 +45,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "config.middleware.RequestIDMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -159,3 +160,52 @@ FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
 
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@restaurant-agent.com")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "[{asctime}] {levelname} {name} {request_id} {message}",
+            "style": "{",
+        },
+    },
+    "filters": {
+        "request_id": {
+            "()": "config.middleware.RequestIDFilter",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+            "filters": ["request_id"],
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": os.getenv("LOG_LEVEL", "INFO"),
+    },
+    "loggers": {
+        "agent": {
+            "handlers": ["console"],
+            "level": os.getenv("LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+        "payments": {
+            "handlers": ["console"],
+            "level": os.getenv("LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+        "reservations": {
+            "handlers": ["console"],
+            "level": os.getenv("LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+        "menu": {
+            "handlers": ["console"],
+            "level": os.getenv("LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+    },
+}

@@ -170,3 +170,54 @@
 .staff-dashboard__action-btn--resolve:hover {
   background: rgba(47, 221, 113, 0.1);
 }
+
+@media (max-width: 700px) {
+  .staff-dashboard__header {
+    padding: 18px 20px;
+  }
+
+  .staff-dashboard__content {
+    padding: 18px 20px;
+  }
+
+  .staff-dashboard__tabs {
+    flex-wrap: wrap;
+  }
+
+  .staff-dashboard__tab {
+    padding: 8px 14px;
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 460px) {
+  .staff-dashboard__header {
+    padding: 14px 16px;
+  }
+
+  .staff-dashboard__header h1 {
+    font-size: 1.1rem;
+  }
+
+  .staff-dashboard__content {
+    padding: 14px 16px;
+  }
+
+  .staff-dashboard__card {
+    padding: 14px 16px;
+  }
+
+  .staff-dashboard__card-header {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .staff-dashboard__actions {
+    flex-wrap: wrap;
+  }
+
+  .staff-dashboard__action-btn {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+}

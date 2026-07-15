@@ -77,11 +77,11 @@ export function PaymentResult() {
   }
 
   return (
-    <div className="payment-result">
-      <div className={`payment-result__card payment-result__card--${status}`}>
+    <div className="payment-result" role="main" aria-label="Payment result">
+      <div className={`payment-result__card payment-result__card--${status}`} role="status" aria-live="polite">
         {status === "checking" && (
           <>
-            <div className="payment-result__spinner" />
+            <div className="payment-result__spinner" aria-hidden="true" />
             <h2>Verifying Payment...</h2>
             <p>Reference: {txRef}</p>
             <p className="payment-result__muted">
@@ -97,7 +97,7 @@ export function PaymentResult() {
 
         {status === "completed" && (
           <>
-            <div className="payment-result__icon">&#10003;</div>
+            <div className="payment-result__icon" aria-hidden="true">&#10003;</div>
             <h2>Payment Successful</h2>
             <p>Your payment has been confirmed.</p>
             <p className="payment-result__muted">Reference: {txRef}</p>
@@ -109,7 +109,7 @@ export function PaymentResult() {
 
         {status === "failed" && (
           <>
-            <div className="payment-result__icon payment-result__icon--fail">&#10007;</div>
+            <div className="payment-result__icon payment-result__icon--fail" aria-hidden="true">&#10007;</div>
             <h2>Payment Failed</h2>
             <p>Your payment could not be processed.</p>
             <p className="payment-result__muted">Reference: {txRef}</p>
@@ -121,7 +121,7 @@ export function PaymentResult() {
 
         {status === "error" && (
           <>
-            <div className="payment-result__icon payment-result__icon--fail">&#10007;</div>
+            <div className="payment-result__icon payment-result__icon--fail" aria-hidden="true">&#10007;</div>
             <h2>Something Went Wrong</h2>
             <p>Could not verify your payment. Please contact support.</p>
             <button className="payment-result__btn" onClick={() => navigate("/")}>

@@ -31,20 +31,29 @@ export function StaffDashboard() {
     <div className="staff-dashboard">
       <header className="staff-dashboard__header">
         <h1>Staff Dashboard</h1>
-        <div className="staff-dashboard__tabs">
+        <div className="staff-dashboard__tabs" role="tablist" aria-label="Dashboard sections">
           <button
+            role="tab"
+            aria-selected={activeTab === "orders"}
+            aria-controls="staff-panel-orders"
             className={`staff-dashboard__tab ${activeTab === "orders" ? "staff-dashboard__tab--active" : ""}`}
             onClick={() => setActiveTab("orders")}
           >
             Orders ({orders.length})
           </button>
           <button
+            role="tab"
+            aria-selected={activeTab === "reservations"}
+            aria-controls="staff-panel-reservations"
             className={`staff-dashboard__tab ${activeTab === "reservations" ? "staff-dashboard__tab--active" : ""}`}
             onClick={() => setActiveTab("reservations")}
           >
             Reservations ({reservations.length})
           </button>
           <button
+            role="tab"
+            aria-selected={activeTab === "alerts"}
+            aria-controls="staff-panel-alerts"
             className={`staff-dashboard__tab ${activeTab === "alerts" ? "staff-dashboard__tab--active" : ""}`}
             onClick={() => setActiveTab("alerts")}
           >
@@ -55,7 +64,7 @@ export function StaffDashboard() {
 
       <main className="staff-dashboard__content">
         {activeTab === "orders" && (
-          <div className="staff-dashboard__list">
+          <div id="staff-panel-orders" role="tabpanel" className="staff-dashboard__list">
             {ordersLoading && <p className="staff-dashboard__muted">Loading...</p>}
             {!ordersLoading && orders.length === 0 && (
               <p className="staff-dashboard__muted">No active orders</p>
@@ -79,7 +88,7 @@ export function StaffDashboard() {
         )}
 
         {activeTab === "reservations" && (
-          <div className="staff-dashboard__list">
+          <div id="staff-panel-reservations" role="tabpanel" className="staff-dashboard__list">
             {reservationsLoading && <p className="staff-dashboard__muted">Loading...</p>}
             {!reservationsLoading && reservations.length === 0 && (
               <p className="staff-dashboard__muted">No held reservations</p>
@@ -104,7 +113,7 @@ export function StaffDashboard() {
         )}
 
         {activeTab === "alerts" && (
-          <div className="staff-dashboard__list">
+          <div id="staff-panel-alerts" role="tabpanel" className="staff-dashboard__list">
             {alertsLoading && <p className="staff-dashboard__muted">Loading...</p>}
             {!alertsLoading && alerts.length === 0 && (
               <p className="staff-dashboard__muted">No pending alerts</p>
@@ -126,12 +135,14 @@ export function StaffDashboard() {
                 <div className="staff-dashboard__actions">
                   <button
                     className="staff-dashboard__action-btn"
+                    aria-label={`Acknowledge alert: ${alert.reason}`}
                     onClick={() => handleAcknowledge(alert.id)}
                   >
                     Acknowledge
                   </button>
                   <button
                     className="staff-dashboard__action-btn staff-dashboard__action-btn--resolve"
+                    aria-label={`Resolve alert: ${alert.reason}`}
                     onClick={() => handleResolve(alert.id)}
                   >
                     Resolve

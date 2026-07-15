@@ -17,7 +17,7 @@ export function Message({ message }: MessageProps) {
   }).format(message.timestamp);
 
   return (
-    <div className={`message ${isUser ? "message--user" : "message--assistant"}`}>
+    <div className={`message ${isUser ? "message--user" : "message--assistant"}`} role="article" aria-label={isUser ? "Your message" : "Assistant message"}>
       <div className="message__stack">
         <div className="message__meta">
           <span className="message__label">{isUser ? "YOU" : "RESTO CORE"}</span>

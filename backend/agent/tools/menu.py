@@ -1,5 +1,9 @@
+import logging
+
 from menu.models import MenuItem
 from agent.tools.base import BaseTool, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 class MenuTool(BaseTool):
@@ -38,12 +42,14 @@ class MenuTool(BaseTool):
 
         items = list(query.order_by("category", "price")[:8])
         if not items:
+            logger.info("action=search filters=%s result=empty", kwargs)
             return ToolResult(
                 success=True,
                 message="No menu items found matching your criteria.",
                 data={"items": [], "filters": kwargs},
                 next_action="ask_user",
             )
+        logger.info("action=search filters=%s result=%d_items", kwargs, len(items))
         return ToolResult(
             success=True,
             message=self._format_items(items),

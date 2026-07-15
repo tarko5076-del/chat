@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MAX_REACT_ITERATIONS = 10
+TOOL_TIMEOUT_SECONDS = 30
 REFLECTION_PROMPT = (
     "Review the tool result above. If you have enough information to fully answer "
     "the user's request, respond with a final answer now. If you still need to call "
@@ -350,7 +352,23 @@ class ReActLoop:
                 message=f"Tool '{name}' is not available.",
             )
         start_time = time.monotonic()
-        result = await sync_to_async(tool.execute)(**args)
+        try:
+            result = await asyncio.wait_for(
+                sync_to_async(tool.execute)(**args),
+                timeout=TOOL_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            logger.warning(
+                "ReAct tool=%s timed out after %ds", name, TOOL_TIMEOUT_SECONDS,
+            )
+            return ToolResult(
+                success=False,
+                message=(
+                    f"Tool '{name}' timed out after {TOOL_TIMEOUT_SECONDS} seconds. "
+                    "Please try again or use a different approach."
+                ),
+            )
         duration_ms = int((time.monotonic() - start_time) * 1000)
         memory.remember_tool_result(result, tool_name=name)
         logger.info(

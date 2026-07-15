@@ -1,9 +1,13 @@
+import logging
+
 from django.db import transaction
 
 from agent.tools.base import BaseTool, ToolResult, TAX_RATE, DELIVERY_FEE
 from agent.utils import words as _words, cuisine_hint_words as _cuisine_hint_words
 from menu.models import MenuItem
 from orders.models import Order, OrderItem
+
+logger = logging.getLogger(__name__)
 
 
 class OrderTool(BaseTool):
@@ -164,6 +168,8 @@ class OrderTool(BaseTool):
         from agent.email_service import send_order_confirmation
         send_order_confirmation(order)
 
+        logger.info("order_id=%d action=create status=submitted items=%d total=%.2f", order.id, order.items.count(), float(order.total))
+
         return ToolResult(
             success=True,
             message=f"Order created. ID: {order.id}.",
@@ -228,6 +234,7 @@ class OrderTool(BaseTool):
                 price=item.price,
             )
         order.refresh_from_db()
+        logger.info("order_id=%d action=add_item item=%s qty=%d", order.id, item.name, quantity)
         return ToolResult(
             success=True,
             message=f"Added {quantity} x {item.name} to order ID: {order.id}.",
