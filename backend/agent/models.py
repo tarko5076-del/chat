@@ -1,6 +1,5 @@
-from django.contrib.postgres.indexes import GinIndex
 from django.db import models
-from pgvector.django import VectorField
+from pgvector.django import IvfflatIndex, VectorField
 
 
 class EpisodicMemory(models.Model):
@@ -93,7 +92,7 @@ class KnowledgeBase(models.Model):
     class Meta:
         ordering = ["content_type", "title"]
         indexes = [
-            GinIndex(fields=["embedding"], name="knowledge_embedding_idx", opclasses=["vector_l2_ops"]),
+            IvfflatIndex(name="knowledge_embedding_idx", fields=["embedding"], opclasses=["vector_l2_ops"], lists=100),
         ]
 
 

@@ -111,7 +111,7 @@ export const chatApi = createApi({
     }),
 
     getCustomerMemory: builder.query({
-      query: (customerId: string) => `/memory/${customerId}/`,
+      query: (customerId: string) => `/agent/memory/${customerId}/`,
       providesTags: ["Memory"],
     }),
 
@@ -271,13 +271,12 @@ export function sendMessageStream(
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        Accept: "text/event-stream",
       };
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+      const response = await fetch(`${API_BASE_URL}/agent/chat/stream/`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),

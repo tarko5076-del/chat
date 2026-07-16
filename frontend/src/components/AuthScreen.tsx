@@ -1,11 +1,65 @@
 import { useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppDispatch } from "../hooks";
 import { setCredentials } from "../slices/authSlice";
 import { useLoginMutation, useRegisterMutation } from "../services/api";
 import "./AuthScreen.css";
 
+/**
+ * Extract a human-readable error message from a DRF error response.
+ * Handles multiple response shapes:
+ *   { "detail": "..." }                       — single message
+ *   { "field": ["err1", "err2"] }            — field-level
+ *   { "non_field_errors": ["..."] }           — non-field errors
+ *   { "error": "..." }                        — generic error string
+ */
+function extractErrorMessage(err: unknown): string {
+  if (!err || typeof err !== "object") return "Authentication failed. Please try again.";
+
+  const apiErr = err as Record<string, unknown>;
+  const data = apiErr["data"] as Record<string, unknown> | undefined;
+
+  // 1) drf detail message (e.g. LoginView returning 401)
+  if (data && typeof data["detail"] === "string") {
+    return data["detail"];
+  }
+
+  // 2) drf non_field_errors (e.g. model-level validation)
+  if (
+    data &&
+    Array.isArray(data["non_field_errors"]) &&
+    (data["non_field_errors"] as string[]).length > 0
+  ) {
+    return (data["non_field_errors"] as string[])[0];
+  }
+
+  // 3) drf field-level validation errors
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const fieldEntries = Object.entries(data).filter(
+      ([key]) => key !== "detail" && key !== "non_field_errors",
+    );
+    if (fieldEntries.length > 0) {
+      const messages: string[] = [];
+      for (const [field, msgs] of fieldEntries) {
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          messages.push(`${field}: ${msgs[0]}`);
+        }
+      }
+      if (messages.length > 0) return messages.join("; ");
+    }
+  }
+
+  // 4) plain error string (network error, etc.)
+  if (typeof apiErr["error"] === "string") {
+    return apiErr["error"];
+  }
+
+  return "Authentication failed. Please try again.";
+}
+
 export function AuthScreen() {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -36,6 +90,7 @@ export function AuthScreen() {
             user: result.user,
           }),
         );
+        navigate("/", { replace: true });
       } else {
         const result = await login({ email, password }).unwrap();
         dispatch(
@@ -45,12 +100,10 @@ export function AuthScreen() {
             user: result.user,
           }),
         );
+        navigate("/", { replace: true });
       }
     } catch (err: unknown) {
-      const apiErr = err as { data?: { detail?: string }; error?: string };
-      setError(
-        apiErr?.data?.detail ?? apiErr?.error ?? "Authentication failed. Please try again.",
-      );
+      setError(extractErrorMessage(err));
     }
   }
 

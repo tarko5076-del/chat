@@ -49,7 +49,7 @@ class RestaurantAgent:
         memory.remember_user_message(message)
 
         try:
-            self.memory_manager.record_user_message(
+            await sync_to_async(self.memory_manager.record_user_message)(
                 customer_id=customer_id,
                 conversation_id=conversation_id,
                 message=message,
@@ -81,18 +81,18 @@ class RestaurantAgent:
         memory.remember_message(response)
 
         try:
-            self.memory_manager.record_assistant_response(
+            await sync_to_async(self.memory_manager.record_assistant_response)(
                 customer_id=customer_id,
                 conversation_id=conversation_id,
                 response=response,
             )
             if customer_id:
-                self.memory_manager.extract_and_learn(
+                await sync_to_async(self.memory_manager.extract_and_learn)(
                     customer_id=customer_id,
                     conversation_id=conversation_id,
                     working_memory=memory,
                 )
-                self.memory_manager.update_profile(customer_id=customer_id)
+                await sync_to_async(self.memory_manager.update_profile)(customer_id=customer_id)
         except Exception:
             logger.debug("Failed to record episodic/semantic events", exc_info=True)
 
@@ -114,7 +114,7 @@ class RestaurantAgent:
         memory.remember_user_message(message)
 
         try:
-            self.memory_manager.record_user_message(
+            await sync_to_async(self.memory_manager.record_user_message)(
                 customer_id=customer_id,
                 conversation_id=conversation_id,
                 message=message,
@@ -357,7 +357,7 @@ class RestaurantAgent:
     async def _retrieve_rag_context(self, message: str) -> str:
         """Auto-retrieve relevant knowledge for the user's message."""
         try:
-            results = search_knowledge(message, top_k=3)
+            results = await sync_to_async(search_knowledge)(message, top_k=3)
             return format_knowledge_context(results)
         except Exception:
             logger.debug("RAG retrieval failed", exc_info=True)

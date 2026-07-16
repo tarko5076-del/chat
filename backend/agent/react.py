@@ -378,7 +378,7 @@ class ReActLoop:
             duration_ms,
         )
         if self._tool_trace_callback:
-            self._tool_trace_callback(name, args, result, duration_ms)
+            await sync_to_async(self._tool_trace_callback)(name, args, result, duration_ms)
         return result
 
     def _detect_action_type(self, tool_name: str, result: ToolResult) -> str | None:

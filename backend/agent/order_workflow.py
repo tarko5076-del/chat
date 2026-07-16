@@ -1,6 +1,8 @@
 import re
 from typing import Any
 
+from asgiref.sync import sync_to_async
+
 from agent.memory import ConversationMemory, empty_order_state
 from config.settings import TAX_RATE, DELIVERY_FEE
 from menu.models import MenuItem
@@ -61,7 +63,7 @@ class OrderWorkflow:
         if self._should_handle_payment(text, memory):
             return await self._handle_payment(text, memory)
 
-        lookup = self._lookup_menu_request(text, memory)
+        lookup = await self._lookup_menu_request(text, memory)
         if self._is_menu_request(text):
             if not lookup.get("item") and not lookup.get("requested_name"):
                 return None
@@ -96,14 +98,14 @@ class OrderWorkflow:
                 memory.order_status = "collecting"
                 return "What would you like to order?"
             quantity = self._quantity(text)
-            item = self._item_by_id(int(pending_item["menu_item_id"]))
+            item = await self._item_by_id(int(pending_item["menu_item_id"]))
             memory.order_state["pending_item"] = None
             if not item:
                 memory.order_status = "collecting"
                 return "I could not find that menu item anymore. What would you like instead?"
             if not item.available:
                 memory.order_status = "collecting"
-                return self._sold_out_response(item)
+                return await self._sold_out_response(item)
             self._add_item(memory, item, quantity)
             return self._next_order_prompt(memory, f"I've added {quantity} x {item.name}.")
 
@@ -141,7 +143,7 @@ class OrderWorkflow:
 
         if item:
             if not item.available:
-                return self._sold_out_response(item)
+                return await self._sold_out_response(item)
             if not self._has_quantity(text):
                 memory.order_state["pending_item"] = self._menu_line(item)
                 memory.order_status = "awaiting_quantity"
@@ -153,7 +155,7 @@ class OrderWorkflow:
         requested_name = lookup.get("requested_name")
         if requested_name:
             memory.order_status = "collecting"
-            return self._not_found_response(requested_name)
+            return await self._not_found_response(requested_name)
 
         if self._is_ready_to_order(text):
             return self._next_order_prompt(memory)
@@ -194,7 +196,7 @@ class OrderWorkflow:
             if not isinstance(order, dict):
                 memory.order_status = "collecting"
                 return "I lost track of that previous order. Please ask me to show it again."
-            unavailable = self._unavailable_reorder_items(order)
+            unavailable = await self._unavailable_reorder_items(order)
             if unavailable:
                 memory.order_state["pending_reorder"] = None
                 memory.order_status = "collecting"
@@ -398,9 +400,9 @@ class OrderWorkflow:
         lines.append(f"Payment Method: {self._display(payment_method)}")
         return "\n".join(lines)
 
-    def _lookup_menu_request(self, text: str, memory: ConversationMemory) -> dict[str, Any]:
+    async def _lookup_menu_request(self, text: str, memory: ConversationMemory) -> dict[str, Any]:
         requested_name = self._requested_item_name(text)
-        items = list(MenuItem.objects.all())
+        items = await sync_to_async(lambda: list(MenuItem.objects.all()))()
         item = self._match_menu_item(items, text)
         if not item and requested_name:
             item = self._match_menu_item(items, requested_name.lower())
@@ -426,8 +428,8 @@ class OrderWorkflow:
         best_score, _, best_item = scored[0]
         return best_item if best_score >= 2 or (best_score == 1 and len(scored) == 1) else None
 
-    def _not_found_response(self, requested_name: str) -> str:
-        alternatives = self._alternatives(requested_name=requested_name)
+    async def _not_found_response(self, requested_name: str) -> str:
+        alternatives = await self._alternatives(requested_name=requested_name)
         if not alternatives:
             return f"We don't currently have {requested_name} on our menu. Would you like to see the menu?"
         return (
@@ -437,8 +439,8 @@ class OrderWorkflow:
             "Would you like one of these instead?"
         )
 
-    def _sold_out_response(self, item: MenuItem) -> str:
-        alternatives = self._alternatives(item=item)
+    async def _sold_out_response(self, item: MenuItem) -> str:
+        alternatives = await self._alternatives(item=item)
         if not alternatives:
             return f"I'm sorry, {item.name} is currently sold out. Would you like to see the menu?"
         return (
@@ -448,12 +450,12 @@ class OrderWorkflow:
             "Would you like one of these instead?"
         )
 
-    def _alternatives(
+    async def _alternatives(
         self,
         requested_name: str | None = None,
         item: MenuItem | None = None,
     ) -> list[MenuItem]:
-        available = list(MenuItem.objects.filter(available=True))
+        available = await sync_to_async(lambda: list(MenuItem.objects.filter(available=True)))()
         requested_words = _words(requested_name or "")
         requested_words |= _cuisine_hint_words(requested_name or "")
         if item:
@@ -478,17 +480,17 @@ class OrderWorkflow:
         candidates = positive or scored
         return [candidate for _, _, candidate in candidates[:3]]
 
-    def _unavailable_reorder_items(self, order: dict) -> str | None:
+    async def _unavailable_reorder_items(self, order: dict) -> str | None:
         for line in order.get("items", []):
-            item = MenuItem.objects.filter(id=int(line["menu_item_id"])).first()
+            item = await sync_to_async(lambda: MenuItem.objects.filter(id=int(line["menu_item_id"])).first())()
             if not item:
-                return self._not_found_response(line.get("item_name", "that item"))
+                return await self._not_found_response(line.get("item_name", "that item"))
             if not item.available:
-                return self._sold_out_response(item)
+                return await self._sold_out_response(item)
         return None
 
-    def _item_by_id(self, menu_item_id: int) -> MenuItem | None:
-        return MenuItem.objects.filter(id=menu_item_id).first()
+    async def _item_by_id(self, menu_item_id: int) -> MenuItem | None:
+        return await sync_to_async(lambda: MenuItem.objects.filter(id=menu_item_id).first())()
 
     def _identity_args(self, memory: ConversationMemory) -> dict[str, Any]:
         return {

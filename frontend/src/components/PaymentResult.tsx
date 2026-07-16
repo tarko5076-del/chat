@@ -15,7 +15,7 @@ export function PaymentResult() {
   const MAX_ATTEMPTS = 30;
   const POLL_INTERVAL = 3000;
 
-  const { data: payments } = useGetPaymentsQuery(
+  useGetPaymentsQuery(
     txRef ? { status: undefined } : undefined,
     { skip: !txRef },
   );

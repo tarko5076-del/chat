@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { Provider } from "react-redux";
+import { BrowserRouter } from "react-router-dom";
 import { store } from "./store";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import App from "./App";
@@ -16,9 +17,11 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <Provider store={store}>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
+      <BrowserRouter>
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
+      </BrowserRouter>
     </Provider>
   </StrictMode>,
 );
