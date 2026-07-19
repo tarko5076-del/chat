@@ -31,6 +31,10 @@ def empty_order_state() -> dict[str, Any]:
         "address": None,
         "payment_method": None,
         "status": "collecting_information",
+        "pending_item": None,
+        # Reserved for future multi-turn slot filling
+        "pending_action": None,
+        "waiting_for": None,
     }
 
 
@@ -50,8 +54,11 @@ class ConversationMemory:
     payment_method: str | None = None
     payment_status: str | None = None
     payment_id: str | None = None
+    reservation_status: str | None = None
     notes: list[str] = field(default_factory=list)
     tool_results: list[dict[str, Any]] = field(default_factory=list)
+    discussed_topics: list[str] = field(default_factory=list)
+    conversation_summary: str | None = None
 
     @classmethod
     def from_history(cls, history: list[dict] | None) -> "ConversationMemory":
@@ -78,6 +85,9 @@ class ConversationMemory:
             payment_method=state.get("payment_method"),
             payment_status=state.get("payment_status"),
             payment_id=state.get("payment_id"),
+            reservation_status=state.get("reservation_status"),
+            discussed_topics=state.get("discussed_topics") or [],
+            conversation_summary=state.get("conversation_summary"),
         )
 
     def remember_user_message(self, message: str) -> None:
@@ -115,6 +125,9 @@ class ConversationMemory:
             "payment_method": self.payment_method,
             "payment_status": self.payment_status,
             "payment_id": self.payment_id,
+            "reservation_status": self.reservation_status,
+            "discussed_topics": self.discussed_topics,
+            "conversation_summary": self.conversation_summary,
         }
 
     def _learn_from_text(self, text: str) -> None:
@@ -176,6 +189,41 @@ class ConversationMemory:
         for item in self.current_order_items():
             parts.append(f"{item.get('quantity', 1)} x {item.get('name')}")
         return ", ".join(parts)
+
+    def has_pending_slot(self) -> str | None:
+        """Return the slot name the system is waiting for, or None.
+
+        Checks order_status first, then falling back to order_state['waiting_for']
+        for self-healing if the former was lost between requests.
+        """
+        if self.order_status in {
+            "awaiting_quantity",
+            "awaiting_delivery_method",
+            "awaiting_address",
+            "awaiting_payment_method",
+            "awaiting_customer_name",
+            "awaiting_confirmation",
+            "awaiting_menu_confirmation",
+        }:
+            return self.order_status
+        if self.order_state.get("waiting_for"):
+            return self.order_state["waiting_for"]
+        return None
+
+    def pending_item(self) -> dict[str, Any] | None:
+        item = self.order_state.get("pending_item")
+        return item if isinstance(item, dict) else None
+
+    def set_pending_slot(self, waiting_for: str, pending_item: dict | None = None) -> None:
+        """Set a pending slot and optionally the item it refers to."""
+        self.order_state["waiting_for"] = waiting_for
+        self.order_state["pending_action"] = waiting_for
+        if pending_item is not None:
+            self.order_state["pending_item"] = pending_item
+
+    def clear_pending_slot(self) -> None:
+        self.order_state["waiting_for"] = None
+        self.order_state["pending_item"] = None
 
     def reset_order_state(self) -> None:
         self.order_state = empty_order_state()

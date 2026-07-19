@@ -1,5 +1,11 @@
+from django.conf import settings
 from django.db import models
 from pgvector.django import IvfflatIndex, VectorField
+
+# Embedding dimension — must match the model used to generate vectors.
+# Default 1536 (OpenAI text-embedding-3-small).
+# If using a Hugging Face model with different dims, update this AND run makemigrations.
+_EMBED_DIM = getattr(settings, "EMBEDDING_DIMENSIONS", 1536)
 
 
 class EpisodicMemory(models.Model):
@@ -51,6 +57,21 @@ class SemanticMemory(models.Model):
             models.Index(fields=["customer_id", "category"]),
         ]
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "customer_id": self.customer_id,
+            "category": self.category,
+            "fact_key": self.fact_key,
+            "fact_value": self.fact_value,
+            "confidence": self.confidence,
+            "observation_count": self.observation_count,
+            "source_conversation_id": self.source_conversation_id,
+            "source_tool": self.source_tool,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_observed_at": self.last_observed_at.isoformat() if self.last_observed_at else None,
+        }
+
 
 class CustomerProfile(models.Model):
     customer_id = models.CharField(max_length=255, primary_key=True)
@@ -84,7 +105,7 @@ class KnowledgeBase(models.Model):
     title = models.CharField(max_length=255)
     content = models.TextField()
     metadata = models.JSONField(default=dict, blank=True)
-    embedding = VectorField(dimensions=1536)
+    embedding = VectorField(dimensions=_EMBED_DIM)
     is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

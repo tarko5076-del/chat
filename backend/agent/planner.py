@@ -21,8 +21,14 @@ class LocalPlanner:
         if "reservation" in text or "table" in text or "book" in text or "reserve" in text:
             return [{"tool": "manage_reservation", "args": self._reservation_args(text, memory)}]
 
+        if "checkout" in text or "place order" in text or "confirm order" in text:
+            return [{"tool": "checkout_cart", "args": {"delivery_method": "", "payment_method": ""}}]
+
         if any(word in text for word in ["order", "add", "remove", "cart"]):
-            return [{"tool": "manage_order", "args": self._order_args(message, memory)}]
+            # Check if it's a cart operation vs existing order management
+            if memory.order_id:
+                return [{"tool": "manage_order", "args": self._order_args(message, memory)}]
+            return [{"tool": "manage_cart", "args": self._cart_args(message, memory)}]
 
         if "menu" in text or "recommend" in text or "vegetarian" in text or "vegan" in text or "spicy" in text:
             return [{"tool": "list_menu_items", "args": self._menu_args(text)}]
@@ -96,6 +102,10 @@ class LocalPlanner:
         return bool(memory.reservation_id and action)
 
     def _is_faq(self, text: str) -> bool:
+        # Don't treat reservation-related time/date mentions as FAQ
+        if re.search(r"\b(table|book|reserve|reservation)\b", text):
+            return False
+
         if re.search(r"\d+\s*hours?", text):
             has_time_word = False
         else:
@@ -173,6 +183,19 @@ class LocalPlanner:
             args["order_id"] = memory.order_id
         if action in {"add", "remove"}:
             args["item_name"] = message
+            args["quantity"] = self._quantity(text)
+        return args
+
+    def _cart_args(self, text: str, memory: ConversationMemory) -> dict[str, Any]:
+        text_lower = text.lower()
+        action = "show"
+        if "remove" in text_lower or "delete" in text_lower:
+            action = "remove"
+        elif "add" in text_lower or "order" in text_lower or "i want" in text_lower:
+            action = "add"
+        args: dict[str, Any] = {"action": action, "customer_id": memory.customer_id or "guest"}
+        if action in {"add", "remove"}:
+            args["item_name"] = text
             args["quantity"] = self._quantity(text)
         return args
 

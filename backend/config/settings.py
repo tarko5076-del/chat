@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "orders",
     "reservations",
     "payments",
+    "cart",
     "agent",
 ]
 
@@ -128,6 +129,7 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ALGORITHM": "HS256",
 }
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG
@@ -149,12 +151,19 @@ LLM_FALLBACK_API_KEY = os.getenv("LLM_FALLBACK_API_KEY", "")
 LLM_FALLBACK_BASE_URL = os.getenv("LLM_FALLBACK_BASE_URL", "")
 LLM_FALLBACK_MODEL = os.getenv("LLM_FALLBACK_MODEL", "")
 
+HF_TOKEN = os.getenv("HF_TOKEN", "")
+HF_MODEL = os.getenv("HF_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+HF_EMBEDDING_MODEL = os.getenv("HF_EMBEDDING_MODEL", "")
+EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
 
 CHAPA_SECRET_KEY = os.getenv("CHAPA_SECRET_KEY", "")
 CHAPA_PUBLIC_KEY = os.getenv("CHAPA_PUBLIC_KEY", "")
+CHAPA_WEBHOOK_SECRET = os.getenv("CHAPA_WEBHOOK_SECRET", "")
+PAYMENT_DEMO_MODE = os.getenv("PAYMENT_DEMO_MODE", "true").lower() == "true"
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
 

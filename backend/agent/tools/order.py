@@ -2,10 +2,15 @@ import logging
 
 from django.db import transaction
 
+from orders.services import (
+    OrderService,
+    OrderServiceError,
+    OrderNotFoundError,
+    ItemNotFoundError,
+    ItemUnavailableError,
+)
+from menu.services import MenuService
 from agent.tools.base import BaseTool, ToolResult, TAX_RATE, DELIVERY_FEE
-from agent.utils import words as _words, cuisine_hint_words as _cuisine_hint_words
-from menu.models import MenuItem
-from orders.models import Order, OrderItem
 
 logger = logging.getLogger(__name__)
 
@@ -53,67 +58,47 @@ class OrderTool(BaseTool):
         "required": ["action"],
     }
 
+    def __init__(self):
+        super().__init__()
+        self.service = OrderService()
+        self.menu_service = MenuService()
+
     def execute(self, **kwargs):
         action = kwargs["action"]
-        if action == "history":
-            return self._order_history(kwargs)
-        if action == "last_completed":
-            return self._last_completed_order(kwargs)
-        if action == "create" and kwargs.get("items"):
-            idempotency_key = kwargs.get("idempotency_key")
-            if idempotency_key:
-                existing = Order.objects.filter(idempotency_key=idempotency_key).first()
-                if existing:
-                    return ToolResult(
-                        success=True,
-                        message=f"Order already exists. ID: {existing.id}.",
-                        data={"order": existing.to_dict()},
-                        memory_updates={"order_id": existing.id, "customer_name": existing.customer_name},
-                    )
-            if not kwargs.get("confirmed"):
-                return self._require_confirmation(kwargs)
-            return self._create_order(kwargs, idempotency_key)
-        order = self._find_or_create_order(kwargs)
-        if action == "create":
-            return ToolResult(
-                success=True,
-                message=f"Order created. ID: {order.id}.",
-                data={"order": order.to_dict()},
-                memory_updates={"order_id": order.id, "customer_name": order.customer_name},
-            )
-        if action == "add":
-            return self._add_item(order, kwargs)
-        if action == "remove":
-            return self._remove_item(order, kwargs)
-        if action == "cancel":
-            return self._cancel_order(order)
-        return self._show_order(order)
 
-    def _require_confirmation(self, kwargs):
-        items = kwargs.get("items", [])
-        lines = [f"{item.get('quantity', 1)} x {item.get('name', 'Unknown')}" for item in items]
-        summary = "Order Summary:\n" + "\n".join(lines) if lines else "No items in this order yet."
-        total_line = ""
-        if items:
-            subtotal = sum(float(item.get("price", 0)) * int(item.get("quantity", 1)) for item in items)
-            delivery = DELIVERY_FEE if kwargs.get("delivery_method") == "delivery" else 0.0
-            total = subtotal + (subtotal * TAX_RATE) + delivery
-            total_line = f"\nTotal: ${total:.2f}"
-        delivery_info = f"\nDelivery method: {kwargs.get('delivery_method', 'Not specified')}"
-        if kwargs.get("delivery_method") == "delivery" and kwargs.get("delivery_address"):
-            delivery_info += f"\nDelivery address: {kwargs['delivery_address']}"
-        return ToolResult(
-            success=False,
-            message=f"{summary}{total_line}{delivery_info}\n\nPlease confirm by calling this tool again with confirmed=True to place the order.",
-            next_action="awaiting_confirmation",
-            data={
-                "confirmation_required": True,
-                "summary": f"{summary}{total_line}{delivery_info}",
-            },
-        )
+        try:
+            if action == "history":
+                return self._order_history(kwargs)
+            if action == "last_completed":
+                return self._last_completed_order(kwargs)
+            if action == "create" and kwargs.get("items"):
+                return self._create_order(kwargs)
+            return self._manage_existing_order(action, kwargs)
+        except OrderServiceError as e:
+            return ToolResult(success=False, message=str(e), next_action="ask_user")
 
-    def _create_order(self, kwargs, idempotency_key=None):
-        missing = [field for field in ["customer_name", "items", "delivery_method", "payment_method"] if not kwargs.get(field)]
+    # ── Order creation with confirmation gate ─────────────────────────────
+
+    def _create_order(self, kwargs):
+        # Check idempotency
+        idempotency_key = kwargs.get("idempotency_key")
+        if idempotency_key:
+            existing = self.service.repo.get_by_idempotency_key(idempotency_key)
+            if existing:
+                return ToolResult(
+                    success=True,
+                    message=f"Order already exists. ID: {existing.id}.",
+                    data={"order": existing.to_dict()},
+                    memory_updates={
+                        "order_id": existing.id,
+                        "customer_name": existing.customer_name,
+                    },
+                )
+
+        missing = [
+            field for field in ["customer_name", "items", "delivery_method", "payment_method"]
+            if not kwargs.get(field)
+        ]
         if kwargs.get("delivery_method") == "delivery" and not kwargs.get("delivery_address"):
             missing.append("delivery_address")
         if missing:
@@ -124,51 +109,28 @@ class OrderTool(BaseTool):
                 next_action="ask_user",
             )
 
-        order_items = []
-        for requested in kwargs["items"]:
-            item = self._menu_item_by_id_or_name(
-                requested.get("menu_item_id"),
-                requested.get("name", ""),
-            )
-            if not item:
-                return self._item_not_found(requested.get("name", "that item"))
-            if not item.available:
-                return self._item_unavailable(item)
-            order_items.append(
-                {
-                    "menu_item_id": item.id,
-                    "name": item.name,
-                    "quantity": int(requested.get("quantity") or 1),
-                    "price": float(item.price),
-                }
-            )
+        # Confirmation gate
+        if not kwargs.get("confirmed"):
+            return self._require_confirmation(kwargs)
 
-        with transaction.atomic():
-            order = Order(
+        # Create via service
+        try:
+            order = self.service.create_order(
                 customer_name=kwargs["customer_name"],
                 customer_id=kwargs.get("customer_id"),
-                email=kwargs.get("email"),
-                phone=kwargs.get("phone"),
-                delivery_method=kwargs.get("delivery_method"),
-                delivery_address=kwargs.get("delivery_address"),
-                payment_method=kwargs.get("payment_method"),
-                status="submitted",
+                email=kwargs.get("email") or "",
+                phone=kwargs.get("phone") or "",
+                delivery_method=kwargs.get("delivery_method", "delivery"),
+                delivery_address=kwargs.get("delivery_address") or "",
+                payment_method=kwargs.get("payment_method", "cash"),
+                items=kwargs.get("items"),
                 idempotency_key=idempotency_key,
             )
-            order.save()
-            for item in order_items:
-                OrderItem.objects.create(
-                    order=order,
-                    menu_item_id=item["menu_item_id"],
-                    item_name=item["name"],
-                    quantity=int(item["quantity"]),
-                    price=float(item["price"]),
-                )
+        except (ItemNotFoundError, ItemUnavailableError) as e:
+            return ToolResult(success=False, message=str(e), next_action="ask_user")
 
         from agent.email_service import send_order_confirmation
         send_order_confirmation(order)
-
-        logger.info("order_id=%d action=create status=submitted items=%d total=%.2f", order.id, order.items.count(), float(order.total))
 
         return ToolResult(
             success=True,
@@ -186,55 +148,43 @@ class OrderTool(BaseTool):
             },
         )
 
-    def _find_or_create_order(self, kwargs):
-        if order_id := kwargs.get("order_id"):
-            order = Order.objects.filter(id=order_id).first()
-            if order:
-                return order
-        name = kwargs.get("customer_name") or "Guest"
-        query = Order.objects.filter(status="active")
-        if kwargs.get("customer_id"):
-            query = query.filter(customer_id=kwargs["customer_id"])
-        elif kwargs.get("email"):
-            query = query.filter(email=kwargs["email"])
-        elif kwargs.get("phone"):
-            query = query.filter(phone=kwargs["phone"])
-        else:
-            query = query.filter(customer_name=name)
-        order = query.first()
-        if order:
-            return order
-        order = Order(
-            customer_name=name,
-            customer_id=kwargs.get("customer_id"),
-            email=kwargs.get("email"),
-            phone=kwargs.get("phone"),
-        )
-        order.save()
-        return order
+    # ── Existing order management ─────────────────────────────────────────
+
+    def _manage_existing_order(self, action, kwargs):
+        order = self._find_or_create_order(kwargs)
+        if not order:
+            return ToolResult(
+                success=False,
+                message="I could not find an active order.",
+                missing_fields=["order_id"],
+                next_action="ask_user",
+            )
+
+        if action == "create":
+            return ToolResult(
+                success=True,
+                message=f"Order created. ID: {order.id}.",
+                data={"order": order.to_dict()},
+                memory_updates={"order_id": order.id, "customer_name": order.customer_name},
+            )
+        if action == "add":
+            return self._add_item(order, kwargs)
+        if action == "remove":
+            return self._remove_item(order, kwargs)
+        if action == "cancel":
+            return self._cancel_order(order)
+        return self._show_order(order)
 
     def _add_item(self, order, kwargs):
-        item = self._match_menu_item(kwargs.get("item_name", ""))
-        if not item:
-            return self._item_not_found(kwargs.get("item_name", "that item"))
-        if not item.available:
-            return self._item_unavailable(item)
-        quantity = int(kwargs.get("quantity") or 1)
-        items_list = list(order.items.all())
-        existing = next((line for line in items_list if line.menu_item_id == item.id), None)
-        if existing:
-            existing.quantity += quantity
-            existing.save()
-        else:
-            OrderItem.objects.create(
-                order=order,
-                menu_item_id=item.id,
-                item_name=item.name,
-                quantity=quantity,
-                price=item.price,
+        try:
+            item, quantity = self.service.add_item(
+                order,
+                kwargs.get("item_name", ""),
+                quantity=int(kwargs.get("quantity", 1)),
             )
-        order.refresh_from_db()
-        logger.info("order_id=%d action=add_item item=%s qty=%d", order.id, item.name, quantity)
+        except (ItemNotFoundError, ItemUnavailableError) as e:
+            return self._item_not_found(str(e), kwargs.get("item_name", ""))
+
         return ToolResult(
             success=True,
             message=f"Added {quantity} x {item.name} to order ID: {order.id}.",
@@ -243,10 +193,9 @@ class OrderTool(BaseTool):
         )
 
     def _remove_item(self, order, kwargs):
-        query = kwargs.get("item_name", "").lower()
-        items_list = list(order.items.all())
-        item = next((line for line in items_list if line.item_name.lower() in query), None)
-        if not item:
+        try:
+            item_name = self.service.remove_item(order, kwargs.get("item_name", ""))
+        except ItemNotFoundError:
             return ToolResult(
                 success=False,
                 message="I could not find that item in the current order.",
@@ -254,9 +203,7 @@ class OrderTool(BaseTool):
                 memory_updates={"order_id": order.id, "customer_name": order.customer_name},
                 next_action="ask_user",
             )
-        item_name = item.item_name
-        item.delete()
-        order.refresh_from_db()
+
         return ToolResult(
             success=True,
             message=f"Removed {item_name} from order ID: {order.id}.",
@@ -265,19 +212,16 @@ class OrderTool(BaseTool):
         )
 
     def _cancel_order(self, order):
-        if order.status == "paid":
+        try:
+            self.service.cancel_order(order)
+        except OrderServiceError as e:
             return ToolResult(
                 success=False,
-                message=(
-                    f"Order ID: {order.id} has already been paid. "
-                    "Please contact the restaurant team for refund or cancellation help."
-                ),
+                message=str(e),
                 data={"order": order.to_dict()},
-                memory_updates={"order_status": order.status},
                 next_action="ask_user",
             )
-        order.status = "cancelled"
-        order.save()
+
         return ToolResult(
             success=True,
             message=f"Order ID: {order.id} has been cancelled.",
@@ -301,10 +245,13 @@ class OrderTool(BaseTool):
                 data={"order": order.to_dict()},
                 memory_updates={"order_id": order.id, "customer_name": order.customer_name},
             )
+
         lines = [f"Order ID: {order.id}"]
         for item in items_list:
             lines.append(f"- {item.quantity} x {item.item_name}: ${item.quantity * item.price:.2f}")
-        lines.append(f"Subtotal: ${sum(item.quantity * item.price for item in items_list):.2f}")
+        lines.append(
+            f"Subtotal: ${sum(item.quantity * item.price for item in items_list):.2f}"
+        )
         return ToolResult(
             success=True,
             message="\n".join(lines),
@@ -312,66 +259,60 @@ class OrderTool(BaseTool):
             memory_updates={"order_id": order.id, "customer_name": order.customer_name},
         )
 
-    def _match_menu_item(self, query):
-        items = list(MenuItem.objects.all())
-        lowered = query.lower()
-        exact = next((item for item in items if item.name.lower() in lowered), None)
-        if exact:
-            return exact
-        query_words = _words(lowered)
-        scored = []
-        for item in items:
-            name_words = _words(item.name)
-            score = len(query_words & name_words)
-            if score:
-                scored.append((score, len(name_words), item))
-        if not scored:
-            return None
-        scored.sort(key=lambda row: (row[0], -row[1]), reverse=True)
-        score, _, item = scored[0]
-        return item if score >= 2 or item.name.lower() in lowered or (score == 1 and len(scored) == 1) else None
-
-    def _menu_item_by_id_or_name(self, menu_item_id, name):
-        if menu_item_id:
-            item = MenuItem.objects.filter(id=int(menu_item_id)).first()
-            if item:
-                return item
-        return self._match_menu_item(name)
+    # ── Order history ─────────────────────────────────────────────────────
 
     def _order_history(self, kwargs):
-        orders_result = self._customer_orders(kwargs, newest_first=False)
-        if isinstance(orders_result, ToolResult):
-            return orders_result
-        orders = self._filter_orders(orders_result, kwargs.get("search"))
+        try:
+            orders = self.service.get_customer_orders(
+                customer_id=kwargs.get("customer_id"),
+                email=kwargs.get("email"),
+                phone=kwargs.get("phone"),
+                order_id=kwargs.get("order_id"),
+                newest_first=False,
+            )
+        except OrderServiceError as e:
+            return ToolResult(
+                success=False, message=str(e),
+                missing_fields=["customer_identifier"],
+                next_action="ask_user",
+            )
+
+        orders = self.service.search_orders(orders, kwargs.get("search"))
         if not orders:
             return ToolResult(
                 success=True,
-                message="I could not find any matching previous orders for those details.",
+                message="I could not find any matching previous orders.",
                 data={"orders": []},
             )
+
         return ToolResult(
             success=True,
             message=self._format_order_history(orders),
-            data={"orders": [order.to_dict() for order in orders]},
+            data={"orders": [o.to_dict() for o in orders]},
             memory_updates=self._identity_updates(kwargs),
         )
 
     def _last_completed_order(self, kwargs):
-        orders_result = self._customer_orders(kwargs, newest_first=True)
-        if isinstance(orders_result, ToolResult):
-            return orders_result
-        orders = [
-            order
-            for order in self._filter_orders(orders_result, kwargs.get("search"))
-            if order.status in {"paid", "submitted", "completed", "delivered"}
-        ]
-        if not orders:
+        try:
+            order = self.service.get_last_completed_order(
+                customer_id=kwargs.get("customer_id"),
+                email=kwargs.get("email"),
+                phone=kwargs.get("phone"),
+            )
+        except OrderServiceError as e:
+            return ToolResult(
+                success=False, message=str(e),
+                missing_fields=["customer_identifier"],
+                next_action="ask_user",
+            )
+
+        if not order:
             return ToolResult(
                 success=True,
                 message="I could not find a previous completed order for those details.",
                 data={"orders": []},
             )
-        order = orders[0]
+
         return ToolResult(
             success=True,
             message=self._format_reorder_candidate(order),
@@ -379,43 +320,59 @@ class OrderTool(BaseTool):
             memory_updates=self._identity_updates(kwargs),
         )
 
-    def _customer_orders(self, kwargs, newest_first):
-        query = Order.objects.all()
-        if kwargs.get("customer_id"):
-            query = query.filter(customer_id=kwargs["customer_id"])
-        elif kwargs.get("email"):
-            query = query.filter(email=kwargs["email"])
-        elif kwargs.get("phone"):
-            query = query.filter(phone=kwargs["phone"])
-        elif kwargs.get("order_id"):
-            query = query.filter(id=int(kwargs["order_id"]))
-        else:
-            return ToolResult(
-                success=False,
-                message=(
-                    "I can show previous orders once I can identify the customer. "
-                    "Please provide the email address, phone number, or order number used for the order."
-                ),
-                missing_fields=["customer_identifier"],
-                next_action="ask_user",
-            )
-        sort_prefix = "-" if newest_first else ""
-        return list(query.order_by(f"{sort_prefix}created_at", f"{sort_prefix}id"))
+    # ── Helpers ───────────────────────────────────────────────────────────
 
-    def _filter_orders(self, orders, search):
-        if not search:
-            return orders
-        search_words = _words(search)
-        if not search_words:
-            return orders
-        return [
-            order
-            for order in orders
-            if any(search_words & _words(item.item_name) for item in order.items.all())
+    def _find_or_create_order(self, kwargs):
+        order_id = kwargs.get("order_id")
+        if order_id:
+            try:
+                return self.service.get_order(
+                    order_id,
+                    customer_id=kwargs.get("customer_id"),
+                )
+            except OrderNotFoundError:
+                pass
+
+        return self.service.get_or_create_active_order(
+            customer_name=kwargs.get("customer_name", "Guest"),
+            customer_id=kwargs.get("customer_id"),
+            email=kwargs.get("email") or "",
+            phone=kwargs.get("phone") or "",
+        )
+
+    def _require_confirmation(self, kwargs):
+        items = kwargs.get("items", [])
+        lines = [
+            f"{item.get('quantity', 1)} x {item.get('name', 'Unknown')}"
+            for item in items
         ]
+        summary = "Order Summary:\n" + "\n".join(lines) if lines else "No items in this order yet."
+        total_line = ""
+        if items:
+            subtotal = sum(
+                float(item.get("price", 0)) * int(item.get("quantity", 1))
+                for item in items
+            )
+            delivery = DELIVERY_FEE if kwargs.get("delivery_method") == "delivery" else 0.0
+            total = subtotal + (subtotal * TAX_RATE) + delivery
+            total_line = f"\nTotal: ${total:.2f}"
 
-    def _item_not_found(self, requested_name):
-        alternatives = self._alternatives(requested_name=requested_name)
+        delivery_info = f"\nDelivery method: {kwargs.get('delivery_method', 'Not specified')}"
+        if kwargs.get("delivery_method") == "delivery" and kwargs.get("delivery_address"):
+            delivery_info += f"\nDelivery address: {kwargs['delivery_address']}"
+
+        return ToolResult(
+            success=False,
+            message=(
+                f"{summary}{total_line}{delivery_info}\n\n"
+                "Please confirm by calling this tool again with confirmed=True to place the order."
+            ),
+            next_action="awaiting_confirmation",
+            data={"confirmation_required": True, "summary": f"{summary}{total_line}{delivery_info}"},
+        )
+
+    def _item_not_found(self, error_msg, requested_name):
+        alternatives = self.menu_service.find_alternatives(requested_name=requested_name)
         if alternatives:
             message = (
                 f"We don't currently have {requested_name} on our menu.\n\n"
@@ -424,58 +381,15 @@ class OrderTool(BaseTool):
                 "Would you like one of these instead?"
             )
         else:
-            message = (
-                f"We don't currently have {requested_name} on our menu. "
-                "Would you like to see the menu?"
-            )
+            message = f"We don't currently have {requested_name} on our menu. Would you like to see the menu?"
+
         return ToolResult(
             success=False,
             message=message,
-            data={"requested_item": requested_name, "alternatives": [item.to_dict() for item in alternatives]},
+            data={"requested_item": requested_name, "alternatives": [a.to_dict() for a in alternatives]},
             missing_fields=["item_name"],
             next_action="ask_user",
         )
-
-    def _item_unavailable(self, item):
-        alternatives = self._alternatives(item=item)
-        message = (
-            f"I'm sorry, {item.name} is currently sold out.\n\n"
-            "Here are some similar dishes that are available:\n\n"
-            f"{self._format_alternatives(alternatives)}\n\n"
-            "Would you like one of these instead?"
-        )
-        return ToolResult(
-            success=False,
-            message=message,
-            data={"requested_item": item.to_dict(), "alternatives": [alt.to_dict() for alt in alternatives]},
-            next_action="ask_user",
-        )
-
-    def _alternatives(self, requested_name=None, item=None):
-        available = list(MenuItem.objects.filter(available=True))
-        requested_words = _words(requested_name or "")
-        requested_words |= _cuisine_hint_words(requested_name or "")
-        if item:
-            requested_words |= _words(item.name)
-            requested_words |= _words(item.description)
-        scored = []
-        for candidate in available:
-            if item and candidate.id == item.id:
-                continue
-            candidate_words = _words(candidate.name) | _words(candidate.description)
-            score = len(requested_words & candidate_words)
-            if item and candidate.category == item.category:
-                score += 5
-            if item and candidate.vegetarian == item.vegetarian:
-                score += 1
-            if item and candidate.spicy == item.spicy:
-                score += 1
-            fallback_score = 1 if not requested_words else 0
-            scored.append((score or fallback_score, -candidate.price, candidate))
-        scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
-        positive = [row for row in scored if row[0] > 0]
-        candidates = positive or scored
-        return [candidate for _, _, candidate in candidates[:3]]
 
     def _format_alternatives(self, items):
         return "\n".join(f"- {item.name}: ${item.price:.2f}" for item in items)
@@ -501,16 +415,11 @@ class OrderTool(BaseTool):
             "Items:\n"
             f"{self._format_order_items(order)}\n"
             f"Status: {order.status.title()}\n"
-            f"Total: ${self._order_total(order):.2f}"
+            f"Total: ${float(order.total):.2f}"
         )
 
     def _format_order_items(self, order):
         return "\n".join(f"- {item.quantity} x {item.item_name}" for item in order.items.all())
-
-    def _order_total(self, order):
-        subtotal = sum(item.price * item.quantity for item in order.items.all())
-        delivery = DELIVERY_FEE if order.delivery_method == "delivery" else 0.0
-        return subtotal + (subtotal * TAX_RATE) + delivery
 
     def _identity_updates(self, kwargs):
         return {

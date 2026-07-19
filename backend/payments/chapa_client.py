@@ -31,6 +31,7 @@ class ChapaClient:
     def __init__(self) -> None:
         self.secret_key = getattr(settings, "CHAPA_SECRET_KEY", "")
         self.enabled = bool(self.secret_key)
+        self.demo_mode = not self.enabled and getattr(settings, "PAYMENT_DEMO_MODE", True)
         self.base_url = CHAPA_API_BASE
 
     def _headers(self) -> dict[str, str]:
@@ -52,9 +53,19 @@ class ChapaClient:
         description: str = "Restaurant payment",
     ) -> ChapaInitResponse:
         if not self.enabled:
+            if self.demo_mode:
+                logger.info(
+                    "chapa_demo tx_ref=%s amount=%.2f currency=%s status=simulated",
+                    tx_ref, amount, currency,
+                )
+                return ChapaInitResponse(
+                    success=True,
+                    checkout_url=f"https://demo.chapa.co/checkout/{tx_ref}",
+                    tx_ref=tx_ref,
+                )
             return ChapaInitResponse(
                 success=False,
-                error="Chapa secret key not configured. Set CHAPA_SECRET_KEY.",
+                error="Chapa secret key not configured. Set CHAPA_SECRET_KEY or enable PAYMENT_DEMO_MODE.",
             )
 
         payload = {
@@ -97,6 +108,12 @@ class ChapaClient:
 
     def verify_payment(self, tx_ref: str) -> ChapaVerifyResponse:
         if not self.enabled:
+            if self.demo_mode:
+                logger.info("chapa_demo_verify tx_ref=%s status=success (simulated)", tx_ref)
+                return ChapaVerifyResponse(
+                    success=True,
+                    status="success",
+                )
             return ChapaVerifyResponse(
                 success=False,
                 error="Chapa secret key not configured.",

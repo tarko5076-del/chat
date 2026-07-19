@@ -10,11 +10,16 @@ import {
   useGetToolLogsQuery,
   useGetSessionsQuery,
   useDeleteSessionMutation,
+  useGetMemoryFactsQuery,
+  useDeleteMemoryFactMutation,
+  useDeleteAllMemoryFactsMutation,
+  useGetCustomerProfileQuery,
+  useGetEpisodicHistoryQuery,
 } from "../services/api";
 import { CountdownTimer } from "./CountdownTimer";
 import "./Sidebar.css";
 
-type Tab = "menu" | "orders" | "reservations" | "alerts" | "activity" | "sessions";
+type Tab = "menu" | "orders" | "reservations" | "alerts" | "memory" | "activity" | "sessions";
 
 interface SidebarProps {
   open: boolean;
@@ -29,8 +34,8 @@ export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: Sid
   const [tab, setTab] = useState<Tab>("menu");
 
   const { data: menuItems, isLoading: menuLoading } = useGetMenuItemsQuery(undefined);
-  const { data: ordersData, isLoading: ordersLoading } = useGetOrdersQuery(undefined, { pollingInterval: 10000 });
-  const { data: reservationsData, isLoading: reservationsLoading, refetch: refetchReservations } = useGetReservationsQuery(undefined, { pollingInterval: 15000 });
+  const { data: ordersData, isLoading: ordersLoading } = useGetOrdersQuery(user?.id ? { customer_id: user.id.toString() } : undefined, { pollingInterval: 10000 });
+  const { data: reservationsData, isLoading: reservationsLoading, refetch: refetchReservations } = useGetReservationsQuery(user?.id ? { customer_id: user.id.toString() } : undefined, { pollingInterval: 15000 });
   const { data: notificationsData } = useGetStaffNotificationsQuery({ status: "pending" });
 
   const orders = ordersData?.results ?? [];
@@ -96,6 +101,15 @@ export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: Sid
           </button>
           <button
             role="tab"
+            aria-selected={tab === "memory"}
+            aria-controls="sidebar-panel-memory"
+            className={`sidebar__tab ${tab === "memory" ? "sidebar__tab--active" : ""}`}
+            onClick={() => setTab("memory")}
+          >
+            Memory
+          </button>
+          <button
+            role="tab"
             aria-selected={tab === "activity"}
             aria-controls="sidebar-panel-activity"
             className={`sidebar__tab ${tab === "activity" ? "sidebar__tab--active" : ""}`}
@@ -135,6 +149,11 @@ export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: Sid
               <AlertsPanel />
             </div>
           )}
+          {tab === "memory" && (
+            <div id="sidebar-panel-memory" role="tabpanel" aria-label="Memory">
+              <MemoryPanel />
+            </div>
+          )}
           {tab === "activity" && (
             <div id="sidebar-panel-activity" role="tabpanel" aria-label="Activity">
               <ActivityPanel />
@@ -156,6 +175,202 @@ export function Sidebar({ open, onClose, onSelectSession, activeSessionId }: Sid
     </>
   );
 }
+
+/* ── Memory Panel ───────────────────────────────────────────────── */
+
+interface MemoryFact {
+  id: number;
+  category: string;
+  fact_key: string;
+  fact_value: string;
+  confidence: number;
+  observation_count: number;
+  created_at: string;
+}
+
+interface CustomerProfileData {
+  customer_id: string;
+  display_name: string;
+  preferred_cuisine: string;
+  dietary_restrictions: string;
+  spice_tolerance: string;
+  budget_range: string;
+  favorite_items: string;
+  total_orders: number;
+  total_reservations: number;
+  last_order_at: string | null;
+}
+
+function MemoryPanel() {
+  const { data: factsData, isLoading: factsLoading } = useGetMemoryFactsQuery({});
+  const { data: profileData, isLoading: profileLoading } = useGetCustomerProfileQuery(undefined);
+  const { data: historyData } = useGetEpisodicHistoryQuery({ limit: 10 });
+  const [deleteFact] = useDeleteMemoryFactMutation();
+  const [deleteAll] = useDeleteAllMemoryFactsMutation();
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const facts = factsData?.results ?? [];
+  const profile = profileData as CustomerProfileData | undefined;
+  const historyItems = historyData?.results ?? [];
+
+  const categoryColors: Record<string, string> = {
+    preference: "#6366f1",
+    dietary: "#ef4444",
+    dislike: "#f97316",
+    cuisine: "#22c55e",
+    spice: "#eab308",
+    budget: "#a855f7",
+    pattern: "#06b6d4",
+    favorite: "#ec4899",
+  };
+
+  if (factsLoading && profileLoading) {
+    return <div className="sidebar__loading">Loading memory data...</div>;
+  }
+
+  return (
+    <div className="memory-panel">
+      {/* Customer Profile Section */}
+      {profile && (
+        <div className="memory-panel__section">
+          <h4 className="memory-panel__section-title">Customer Profile</h4>
+          <div className="memory-panel__profile">
+            {profile.display_name && (
+              <div className="memory-panel__profile-row">
+                <span className="memory-panel__profile-label">Name</span>
+                <span className="memory-panel__profile-value">{profile.display_name}</span>
+              </div>
+            )}
+            {profile.preferred_cuisine && (
+              <div className="memory-panel__profile-row">
+                <span className="memory-panel__profile-label">Cuisine</span>
+                <span className="memory-panel__profile-value">{profile.preferred_cuisine}</span>
+              </div>
+            )}
+            {profile.dietary_restrictions && (
+              <div className="memory-panel__profile-row">
+                <span className="memory-panel__profile-label">Dietary</span>
+                <span className="memory-panel__profile-value">{profile.dietary_restrictions}</span>
+              </div>
+            )}
+            {profile.spice_tolerance && (
+              <div className="memory-panel__profile-row">
+                <span className="memory-panel__profile-label">Spice</span>
+                <span className="memory-panel__profile-value">{profile.spice_tolerance}</span>
+              </div>
+            )}
+            {profile.favorite_items && (
+              <div className="memory-panel__profile-row">
+                <span className="memory-panel__profile-label">Favorites</span>
+                <span className="memory-panel__profile-value">{profile.favorite_items}</span>
+              </div>
+            )}
+            <div className="memory-panel__profile-row">
+              <span className="memory-panel__profile-label">Orders</span>
+              <span className="memory-panel__profile-value">{profile.total_orders} total</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Known Facts Section */}
+      <div className="memory-panel__section">
+        <div className="memory-panel__section-header">
+          <h4 className="memory-panel__section-title">Known Facts</h4>
+          {facts.length > 0 && (
+            <>
+              {!confirmClear ? (
+                <button
+                  className="memory-panel__clear-btn"
+                  onClick={() => setConfirmClear(true)}
+                  title="Delete all facts"
+                >
+                  Clear all
+                </button>
+              ) : (
+                <div className="memory-panel__confirm-group">
+                  <span className="memory-panel__confirm-text">Sure?</span>
+                  <button
+                    className="memory-panel__confirm-yes"
+                    onClick={() => { deleteAll(); setConfirmClear(false); }}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    className="memory-panel__confirm-no"
+                    onClick={() => setConfirmClear(false)}
+                  >
+                    No
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {facts.length === 0 ? (
+          <div className="sidebar__empty">No facts learned yet. Chat with the agent to build memory.</div>
+        ) : (
+          <div className="memory-panel__facts">
+            {facts.map((fact: MemoryFact) => (
+              <div key={fact.id} className="memory-panel__fact">
+                <div className="memory-panel__fact-header">
+                  <span
+                    className="memory-panel__fact-category"
+                    style={{ backgroundColor: categoryColors[fact.category] || "#6b7280" }}
+                  >
+                    {fact.category}
+                  </span>
+                  <span className="memory-panel__fact-confidence">
+                    {(fact.confidence * 100).toFixed(0)}%
+                  </span>
+                  <button
+                    className="memory-panel__fact-delete"
+                    onClick={() => deleteFact({ fact_id: fact.id })}
+                    title="Delete fact"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="memory-panel__fact-body">
+                  <span className="memory-panel__fact-key">{fact.fact_key}</span>
+                  <span className="memory-panel__fact-value">{fact.fact_value}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Recent Episodic History Section */}
+      <div className="memory-panel__section">
+        <h4 className="memory-panel__section-title">Recent Events</h4>
+        {historyItems.length === 0 ? (
+          <div className="sidebar__empty">No recent events.</div>
+        ) : (
+          <div className="memory-panel__events">
+            {historyItems.map((event: { id: number; event_type: string; tool_name: string; outcome: string; created_at: string }) => (
+              <div key={event.id} className="memory-panel__event">
+                <div className="memory-panel__event-header">
+                  <span className="memory-panel__event-type">
+                    {event.tool_name || event.event_type}
+                  </span>
+                  <span className={`orders-panel__badge orders-panel__badge--${event.outcome === "success" || event.outcome === "delivered" || event.outcome === "received" ? "paid" : "cancelled"}`}>
+                    {event.outcome}
+                  </span>
+                </div>
+                <span className="memory-panel__event-time">
+                  {new Date(event.created_at).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── End Memory Panel ───────────────────────────────────────────── */
 
 function AlertsPanel() {
   const { data, isLoading } = useGetStaffNotificationsQuery({ status: "pending" });

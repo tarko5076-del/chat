@@ -6,13 +6,30 @@ from asgiref.sync import sync_to_async
 
 from agent.llm import LLMClient
 from agent.memory import ConversationMemory
+from agent.memory_engine import MemoryEngine, get_suggestions, get_greeting, inline_extract
 from agent.memory_manager import MemoryManager
 from agent.order_workflow import OrderWorkflow
 from agent.planner import LocalPlanner
+from agent.reservation_workflow import ReservationWorkflow
 from agent.prompts import system_prompt
 from agent.rag import format_knowledge_context, search_knowledge
 from agent.react import ReActLoop
-from agent.tools import BillingTool, EscalationTool, FAQTool, MenuTool, OrderTool, PaymentTool, ReservationTool, SearchKnowledgeTool
+from agent.summarizer import persist_summary
+from agent.tools import (
+    BillingTool,
+    CheckoutCartTool,
+    EscalationTool,
+    FAQTool,
+    GetMenuItemDetailsTool,
+    ManageCartTool,
+    MenuTool,
+    OrderTool,
+    ManagePreferencesTool,
+    PaymentTool,
+    RecommendMenuTool,
+    ReservationTool,
+    SearchKnowledgeTool,
+)
 from agent.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -31,7 +48,9 @@ class RestaurantAgent:
         self.planner = LocalPlanner()
         self.react = ReActLoop(self.llm, self.tools)
         self.order_workflow = OrderWorkflow(self)
+        self.reservation_workflow = ReservationWorkflow(self)
         self.memory_manager = MemoryManager()
+        self.memory_engine = MemoryEngine(self.memory_manager)
 
     async def run(
         self,
@@ -56,6 +75,13 @@ class RestaurantAgent:
             )
         except Exception:
             logger.debug("Failed to record episodic event", exc_info=True)
+
+        # Try reservation workflow first (before order workflow)
+        # because reservation keywords ("table", "book") may overlap with order intent
+        workflow_response_reservation = await self.reservation_workflow.handle(message, memory)
+        if workflow_response_reservation:
+            memory.remember_message(workflow_response_reservation)
+            return workflow_response_reservation
 
         workflow_response = await self.order_workflow.handle(message, memory)
         if workflow_response:
@@ -93,6 +119,26 @@ class RestaurantAgent:
                     working_memory=memory,
                 )
                 await sync_to_async(self.memory_manager.update_profile)(customer_id=customer_id)
+
+                # Run conversation summarization for fact extraction
+                try:
+                    user_msgs = [m["content"] for m in (history or []) if m.get("role") == "user"]
+                    user_msgs.append(message)  # include the current message
+                    assistant_msgs = [m["content"] for m in (history or []) if m.get("role") == "assistant"]
+                    tool_calls_data = [
+                        {"name": r.get("tool_name", ""), "success": r.get("success", False)}
+                        for r in getattr(memory, "tool_results", []) or []
+                    ]
+                    await persist_summary(
+                        self.memory_manager,
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        user_messages=user_msgs,
+                        assistant_messages=assistant_msgs,
+                        tool_calls=tool_calls_data,
+                    )
+                except Exception:
+                    logger.debug("Conversation summarization failed", exc_info=True)
         except Exception:
             logger.debug("Failed to record episodic/semantic events", exc_info=True)
 
@@ -121,6 +167,14 @@ class RestaurantAgent:
             )
         except Exception:
             logger.debug("Failed to record episodic event", exc_info=True)
+
+        # Try reservation workflow first (before order workflow)
+        workflow_response_reservation = await self.reservation_workflow.handle(message, memory)
+        if workflow_response_reservation:
+            memory.remember_message(workflow_response_reservation)
+            yield {"type": "token", "content": workflow_response_reservation}
+            yield {"type": "done", "response": workflow_response_reservation, "steps": 0}
+            return
 
         workflow_response = await self.order_workflow.handle(message, memory)
         if workflow_response:
@@ -158,6 +212,21 @@ class RestaurantAgent:
         conversation_id: str | None = None,
     ) -> str:
         memory_context = f"Conversation memory: {memory.as_context()}"
+
+        # Inject proactive memory suggestions for returning guests
+        try:
+            suggestions = await get_suggestions(self.memory_engine, customer_id)
+            if suggestions.get("welcome_back_context"):
+                greeting_context = await get_greeting(self.memory_engine, customer_id)
+                if greeting_context:
+                    memory_context += f"\n\nCustomer memory (for personalization): {greeting_context}"
+            # Add discussed topics
+            if memory.discussed_topics:
+                memory_context += f"\nTopics discussed this conversation: {', '.join(memory.discussed_topics)}"
+            if memory.conversation_summary:
+                memory_context += f"\nConversation note: {memory.conversation_summary}"
+        except Exception:
+            logger.debug("Failed to inject memory suggestions", exc_info=True)
 
         try:
             long_term = self.memory_manager.build_context_string(customer_id=customer_id)
@@ -219,6 +288,20 @@ class RestaurantAgent:
         conversation_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         memory_context = f"Conversation memory: {memory.as_context()}"
+
+        # Inject proactive memory suggestions for returning guests
+        try:
+            suggestions = await get_suggestions(self.memory_engine, customer_id)
+            if suggestions.get("welcome_back_context"):
+                greeting_context = await get_greeting(self.memory_engine, customer_id)
+                if greeting_context:
+                    memory_context += f"\n\nCustomer memory (for personalization): {greeting_context}"
+            if memory.discussed_topics:
+                memory_context += f"\nTopics discussed this conversation: {', '.join(memory.discussed_topics)}"
+            if memory.conversation_summary:
+                memory_context += f"\nConversation note: {memory.conversation_summary}"
+        except Exception:
+            logger.debug("Failed to inject memory suggestions", exc_info=True)
 
         try:
             long_term = self.memory_manager.build_context_string(customer_id=customer_id)
@@ -351,7 +434,21 @@ class RestaurantAgent:
         return f"I can help with that. What {requested} should I use?"
 
     def _build_tools(self) -> dict[str, BaseTool]:
-        tools = [MenuTool(), FAQTool(), ReservationTool(), OrderTool(), BillingTool(), PaymentTool(), EscalationTool(), SearchKnowledgeTool()]
+        tools = [
+            MenuTool(),
+            GetMenuItemDetailsTool(),
+            ManageCartTool(),
+            CheckoutCartTool(),
+            FAQTool(),
+            ReservationTool(),
+            OrderTool(),
+            BillingTool(),
+            PaymentTool(),
+            RecommendMenuTool(),
+            ManagePreferencesTool(),
+            EscalationTool(),
+            SearchKnowledgeTool(),
+        ]
         return {tool.name: tool for tool in tools}
 
     async def _retrieve_rag_context(self, message: str) -> str:

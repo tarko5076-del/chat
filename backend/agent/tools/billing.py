@@ -1,7 +1,7 @@
 import logging
 
-from agent.tools.base import BaseTool, ToolResult, TAX_RATE
-from orders.models import Order
+from orders.services import OrderService, OrderNotFoundError
+from agent.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +14,15 @@ class BillingTool(BaseTool):
         "properties": {
             "order_id": {"type": "integer"},
             "customer_name": {"type": "string"},
+        },
+        "additionalProperties": {
             "split_count": {"type": "integer", "minimum": 2},
         },
     }
+
+    def __init__(self):
+        super().__init__()
+        self.service = OrderService()
 
     def execute(self, **kwargs):
         order = self._find_order(kwargs)
@@ -27,34 +33,40 @@ class BillingTool(BaseTool):
                 missing_fields=["order_id"],
                 next_action="ask_user",
             )
-        items_list = list(order.items.all())
-        subtotal = sum(item.price * item.quantity for item in items_list)
-        tax = subtotal * TAX_RATE
-        total = subtotal + tax
+
+        totals = self.service.calculate_total(order)
         lines = [
             f"Bill for order ID: {order.id}",
-            f"Subtotal: ${subtotal:.2f}",
-            f"Tax: ${tax:.2f}",
-            f"Total: ${total:.2f}",
+            f"Subtotal: ${totals.subtotal:.2f}",
+            f"Tax: ${totals.tax:.2f}",
+            f"Total: ${totals.total:.2f}",
         ]
-        if split_count := kwargs.get("split_count"):
-            lines.append(f"Split {split_count} ways: ${total / int(split_count):.2f} each")
+
+        split_count = kwargs.get("split_count")
+        if split_count:
+            lines.append(f"Split {split_count} ways: ${totals.total / int(split_count):.2f} each")
+
         return ToolResult(
             success=True,
             message="\n".join(lines),
             data={
                 "order_id": order.id,
-                "subtotal": float(subtotal),
-                "tax": float(tax),
-                "total": float(total),
-                "split_count": kwargs.get("split_count"),
-                "split_amount": total / int(kwargs["split_count"]) if kwargs.get("split_count") else None,
+                "subtotal": totals.subtotal,
+                "tax": totals.tax,
+                "total": totals.total,
+                "split_count": split_count,
+                "split_amount": totals.total / int(split_count) if split_count else None,
             },
             memory_updates={"order_id": order.id, "customer_name": order.customer_name},
         )
 
     def _find_order(self, kwargs):
-        if order_id := kwargs.get("order_id"):
-            return Order.objects.filter(id=order_id).first()
+        order_id = kwargs.get("order_id")
+        if order_id:
+            try:
+                return self.service.get_order(order_id)
+            except OrderNotFoundError:
+                return None
+
         name = kwargs.get("customer_name") or "Guest"
-        return Order.objects.filter(customer_name=name, status="active").first()
+        return self.service.get_active_order(customer_name=name)

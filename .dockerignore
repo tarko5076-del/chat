@@ -1,0 +1,57 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+*.egg
+venv/
+.venv/
+env/
+*.db
+*.sqlite3
+db.sqlite3
+
+# --- Environment ---
+.env
+.env.local
+.env.*
+!.env.example
+
+# --- Node.js ---
+node_modules/
+npm-debug.log*
+*.tsbuildinfo
+
+# --- Frontend build ---
+frontend/dist/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Git ---
+.git/
+.gitignore
+.gitattributes
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Static files ---
+staticfiles/
+static/
+
+# --- Documentation & config ---
+README.md
+AGENTS.md
+
+# --- Backend data ---
+backend/data/
+backend/nul
+nul

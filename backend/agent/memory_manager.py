@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 
 from agent.memory import ConversationMemory
-from agent.models import EpisodicMemory, CustomerProfile, SemanticMemory
+from agent.models import AgentSession, EpisodicMemory, CustomerProfile, SemanticMemory
 
 if TYPE_CHECKING:
     from agent.tools.base import ToolResult
@@ -384,6 +384,43 @@ class MemoryManager:
             ).order_by("-confidence")
         )
         return [f.to_dict() for f in facts]
+
+    def delete_semantic_fact(
+        self,
+        *,
+        fact_id: int,
+        customer_id: str,
+    ) -> bool:
+        """Delete a single semantic fact by ID, scoped to the customer."""
+        deleted, _ = SemanticMemory.objects.filter(id=fact_id, customer_id=customer_id).delete()
+        return deleted > 0
+
+    def delete_all_semantic_facts(
+        self,
+        *,
+        customer_id: str,
+    ) -> int:
+        """Delete all semantic facts for a customer. Returns count deleted."""
+        deleted, _ = SemanticMemory.objects.filter(customer_id=customer_id).delete()
+        return deleted
+
+    def get_agent_sessions(
+        self,
+        *,
+        customer_id: str,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Get recent agent sessions for a customer with summary metadata."""
+        sessions = list(
+            AgentSession.objects.filter(user_id=customer_id)
+            .order_by("-updated_at")[:limit]
+        )
+        result = []
+        for s in sessions:
+            d = s.to_dict()
+            d["message_count"] = s.messages.count()
+            result.append(d)
+        return result
 
     def get_profile(
         self,

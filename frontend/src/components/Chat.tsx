@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useAppSelector } from "../hooks";
+import { useAppDispatch, useAppSelector } from "../hooks";
 import { Message as MessageComponent } from "./Message";
 import { ChatInput } from "./ChatInput";
 import { ChatHistory } from "./ChatHistory";
 import { Sidebar } from "./Sidebar";
-import { sendMessageStream } from "../services/api";
+import { sendMessageStream, chatApi } from "../services/api";
+import { logout } from "../slices/authSlice";
 import type { Conversation, Message, ActionRequired } from "../types/chat";
 import "./Chat.css";
 import "./ChatResponsive.css";
@@ -17,9 +18,21 @@ const suggestions = [
 ];
 
 const legacyStorageKey = "resto-chat-history";
-const conversationsStorageKey = "resto-chat-conversations";
-const activeConversationStorageKey = "resto-active-conversation";
 const maxStoredMessages = 120;
+
+function getStorageKeys(userId: string | null | undefined) {
+  if (userId) {
+    return {
+      conversations: `resto-chat-conversations-${userId}`,
+      activeConversation: `resto-active-conversation-${userId}`,
+    };
+  }
+  // Fallback for anonymous users
+  return {
+    conversations: "resto-chat-conversations-anonymous",
+    activeConversation: "resto-active-conversation-anonymous",
+  };
+}
 
 const toolDisplayNames: Record<string, string> = {
   list_menu_items: "Looking up menu",
@@ -31,6 +44,10 @@ const toolDisplayNames: Record<string, string> = {
   search_knowledge: "Searching knowledge base",
   request_human_staff: "Contacting staff",
 };
+
+interface ChatProps {
+  userId: string;
+}
 
 interface ChatState {
   conversations: Conversation[];
@@ -123,11 +140,12 @@ function reviveConversation(conversation: unknown): Conversation | null {
   };
 }
 
-function loadConversations(): Conversation[] {
+function loadConversations(userId: string | null | undefined): Conversation[] {
   try {
-    const saved = localStorage.getItem(conversationsStorageKey);
+    const { conversations: storageKey } = getStorageKeys(userId);
+    const saved = localStorage.getItem(storageKey);
     if (!saved) {
-      return loadLegacyMessages();
+      return [];
     }
 
     const parsed = JSON.parse(saved);
@@ -142,28 +160,11 @@ function loadConversations(): Conversation[] {
   }
 }
 
-function loadLegacyMessages(): Conversation[] {
-  try {
-    const saved = localStorage.getItem(legacyStorageKey);
-    if (!saved) {
-      return [];
-    }
-
-    const parsed = JSON.parse(saved);
-    const messages = Array.isArray(parsed)
-      ? parsed.map(reviveMessage).filter((message): message is Message => Boolean(message))
-      : [];
-
-    return messages.length > 0 ? [createConversation(messages)] : [];
-  } catch {
-    return [];
-  }
-}
-
-function initializeChatState(): ChatState {
-  const conversations = loadConversations();
+function initializeChatState(userId: string | null | undefined): ChatState {
+  const conversations = loadConversations(userId);
   const usableConversations = conversations.length > 0 ? conversations : [createConversation()];
-  const savedActiveId = localStorage.getItem(activeConversationStorageKey);
+  const { activeConversation: activeKey } = getStorageKeys(userId);
+  const savedActiveId = localStorage.getItem(activeKey);
   const hasSavedActive = usableConversations.some(
     (conversation) => conversation.id === savedActiveId,
   );
@@ -174,9 +175,11 @@ function initializeChatState(): ChatState {
   };
 }
 
-export function Chat() {
+export function Chat({ userId }: ChatProps) {
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((s) => s.auth.user);
   const [{ conversations, activeConversationId }, setChatState] =
-    useState<ChatState>(initializeChatState);
+    useState<ChatState>({ conversations: [createConversation()], activeConversationId: "" });
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -189,7 +192,6 @@ export function Chat() {
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingActionRef = useRef<ActionRequired | null>(null);
-  const user = useAppSelector((s) => s.auth.user);
   const activeConversation =
     conversations.find((conversation) => conversation.id === activeConversationId) ??
     conversations[0];
@@ -199,14 +201,29 @@ export function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming.content]);
 
+  // Initialize chat state after cleanup
   useEffect(() => {
+    // Clear ALL chat-related localStorage keys to prevent data leakage
+    const allKeys = Object.keys(localStorage);
+    allKeys.forEach(key => {
+      if (key.startsWith('resto-chat') || key.startsWith('resto-active-conversation')) {
+        localStorage.removeItem(key);
+      }
+    });
+    // Invalidate RTK Query cache to prevent cross-user data leakage
+    dispatch(chatApi.util.invalidateTags(['Session', 'Order', 'Reservation']));
+    setChatState(initializeChatState(userId));
+  }, [userId, dispatch]);
+
+  useEffect(() => {
+    const { conversations: conversationsKey, activeConversation: activeKey } = getStorageKeys(userId);
     const conversationsForStorage = conversations.map((conversation) => ({
       ...conversation,
       messages: conversation.messages.slice(-maxStoredMessages),
     }));
-    localStorage.setItem(conversationsStorageKey, JSON.stringify(conversationsForStorage));
-    localStorage.setItem(activeConversationStorageKey, activeConversationId);
-  }, [activeConversationId, conversations]);
+    localStorage.setItem(conversationsKey, JSON.stringify(conversationsForStorage));
+    localStorage.setItem(activeKey, activeConversationId);
+  }, [activeConversationId, conversations, userId]);
 
   function updateConversationMessages(conversationId: string, nextMessages: Message[]) {
     setChatState((current) => ({
@@ -279,6 +296,7 @@ export function Chat() {
       return;
     }
 
+    const { conversations: conversationsKey } = getStorageKeys(userId);
     const conversation = createConversation();
     setError(null);
     setStreaming({ isStreaming: false, content: "", status: "", abort: null });
@@ -287,6 +305,7 @@ export function Chat() {
       activeConversationId: conversation.id,
     });
     localStorage.removeItem(legacyStorageKey);
+    localStorage.removeItem(conversationsKey);
   }
 
   function handleSelectSession(sessionId: string) {
@@ -397,6 +416,9 @@ export function Chat() {
             setError(detail);
             setStreaming({ isStreaming: false, content: "", status: "", abort: null });
             setIsLoading(false);
+          },
+          onAuthExpired() {
+            dispatch(logout());
           },
         },
       );

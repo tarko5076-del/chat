@@ -6,6 +6,7 @@ from asgiref.sync import sync_to_async
 from agent.memory import ConversationMemory, empty_order_state
 from config.settings import TAX_RATE, DELIVERY_FEE
 from menu.models import MenuItem
+from menu.services import MenuService
 from agent.utils import words as _words, cuisine_hint_words as _cuisine_hint_words
 
 
@@ -22,7 +23,7 @@ class OrderWorkflow:
     }
     confirm_words = {"yes", "confirm", "confirmed", "looks good", "place it", "submit it", "go ahead"}
     decline_words = {"no", "not yet", "change", "edit", "wait"}
-    payment_words = {"pay", "payment", "card", "cash", "mobile", "mobile money", "gift card", "mpesa", "m-pesa"}
+    payment_words = {"pay", "payment", "card", "cash", "mobile", "mobile money", "gift card", "mpesa", "m-pesa", "chapa", "telebirr", "cbe"}
     payment_sent_words = {"paid", "sent", "done", "completed", "payment sent"}
     order_history_words = {"previous order", "previous orders", "order history", "last order", "ordered last"}
     reorder_words = {"same thing as last time", "same as last time", "reorder", "order the same"}
@@ -38,10 +39,23 @@ class OrderWorkflow:
 
     def __init__(self, agent: Any) -> None:
         self.agent = agent
+        self.menu_service = MenuService()
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Main entry point
+    # ────────────────────────────────────────────────────────────────────────
 
     async def handle(self, message: str, memory: ConversationMemory) -> str | None:
         text = message.lower().strip()
 
+        # ─── PRIORITY 1: Check for pending slots first ──────────────────────
+        # If the system is waiting for a slot (quantity, delivery method, etc.)
+        # interpret the user's message as the answer to that slot UNLESS they
+        # clearly change the topic.
+        if self._should_resume_pending(text, memory):
+            return await self._handle_order(message, text, memory, {})
+
+        # ─── PRIORITY 2: Explicit intent overrides ──────────────────────────
         if self._is_reorder_request(text) or memory.order_status == "awaiting_reorder_confirmation":
             return await self._handle_reorder(message, text, memory)
 
@@ -54,15 +68,32 @@ class OrderWorkflow:
             memory.order_status = "collecting"
             return "Absolutely. I'll start a new order for you. What would you like to order?"
 
+        # Cancel an in-progress order (has items or order_id)
         if self._is_cancel(text) and self._has_order_to_cancel(memory):
             if memory.order_id:
                 return await self._cancel_submitted_order(memory)
             memory.reset_order_state()
             return "No problem. I cleared the current order. What would you like instead?"
 
+        # Cancel a pending action (e.g. "never mind" while awaiting quantity, no items yet)
+        if self._is_cancel(text) and memory.pending_item() and not memory.current_order_items():
+            memory.clear_pending_slot()
+            memory.order_status = None
+            return "No problem. I cancelled that. What would you like to do?"
+
+        if memory.order_status == "awaiting_menu_confirmation":
+            if self._is_confirmation(text):
+                memory.order_status = "collecting"
+                result = await self.agent._execute_tool("list_menu_items", {}, memory)
+                return f"{result.message}\n\nWhat would you like to order?"
+            if self._is_decline(text):
+                memory.order_status = "collecting"
+                return "No problem. What would you like to order instead?"
+
         if self._should_handle_payment(text, memory):
             return await self._handle_payment(text, memory)
 
+        # ─── PRIORITY 3: New intent detection ───────────────────────────────
         lookup = await self._lookup_menu_request(text, memory)
         if self._is_menu_request(text):
             if not lookup.get("item") and not lookup.get("requested_name"):
@@ -76,6 +107,93 @@ class OrderWorkflow:
             return None
         return await self._handle_order(message, text, memory, lookup)
 
+    # ────────────────────────────────────────────────────────────────────────
+    # Slot-filling: resume pending workflow before new intent detection
+    # ────────────────────────────────────────────────────────────────────────
+
+    def _should_resume_pending(self, text: str, memory: ConversationMemory) -> bool:
+        """Return True if the user's message should continue a pending slot fill.
+
+        Priority logic:
+        - If the assistant asked for a quantity and the user says a number → resume.
+        - If the user clearly cancels / starts over → let the cancel handler deal
+          with it (return False so that lower-priority checks run).
+        - If the user asks for the menu or clearly changes topic → return False
+          (topic change preserves the pending state but yields to new intent).
+        """
+        pending_slot = memory.has_pending_slot()
+        if not pending_slot:
+            return False
+
+        # Explicit topic changes → don't resume (preserve pending for later)
+        if self._is_explicit_topic_change(text):
+            return False
+
+        # Cancel → let handle() pick it up via _is_cancel
+        # "never mind" / cancel → let handle() pick it up
+        if self._is_cancel(text):
+            return False
+
+        # Reorder / history → let those handlers run instead
+        if self._is_reorder_request(text) or self._is_order_history_request(text):
+            return False
+
+        # Payment keywords when payment is not the pending slot → let payment handler run
+        if pending_slot not in ("awaiting_payment", "awaiting_payment_method"):
+            if any(w in text for w in self.payment_words):
+                return False
+
+        # For quantity: number words or digits → definitely a quantity response
+        if pending_slot == "awaiting_quantity" or pending_slot == "quantity":
+            # Check for quantity FIRST — "actually three" should extract qty=3, not redirect
+            if self._quantity(text) > 0 or self._has_quantity(text):
+                return True
+            # "actually burger" (no quantity) → change item
+            if self._looks_like_item_change(text):
+                return True
+            return False
+
+        # For delivery method: "delivery", "pickup", "collect" → resume
+        if pending_slot in ("awaiting_delivery_method", "delivery_method"):
+            if self._delivery_method(text):
+                return True
+            return False
+
+        # For address → any moderately long text is an address
+        if pending_slot in ("awaiting_address", "address"):
+            if len(text) > 5:
+                return True
+            return False
+
+        # For payment method: card, cash, mobile, gift → resume
+        if pending_slot in ("awaiting_payment_method", "payment_method"):
+            if self._payment_method(text):
+                return True
+            return False
+
+        # For confirmation: yes/no → resume
+        if pending_slot == "awaiting_confirmation":
+            if self._is_confirmation(text) or self._is_decline(text):
+                return True
+            return False
+
+        return True
+
+    def _is_explicit_topic_change(self, text: str) -> bool:
+        """Detect when the user is asking a new question rather than continuing."""
+        question_starts = {"what", "when", "where", "why", "how", "can you", "do you", "tell me"}
+        topic_words = {"menu", "specials", "dessert", "drinks", "hours", "open", "close"}
+        first_word = text.split()[0] if text.split() else ""
+        return first_word in question_starts or any(w in text for w in topic_words)
+
+    def _looks_like_item_change(self, text: str) -> bool:
+        """Detect when user is changing the item during quantity prompt."""
+        return bool(re.search(r"\b(actually|instead|change|different)\b", text))
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Order handling
+    # ────────────────────────────────────────────────────────────────────────
+
     async def _handle_order(
         self,
         message: str,
@@ -85,6 +203,12 @@ class OrderWorkflow:
     ) -> str:
         self._ensure_order_state(memory)
 
+        # ── Self-heal: if order_status was lost between requests ────────────
+        if not memory.order_status and (memory.current_order_items() or memory.pending_item()):
+            response = self._next_order_prompt(memory)
+            if response and memory.order_status:
+                return response
+
         if memory.order_status == "awaiting_confirmation":
             if self._is_confirmation(text):
                 return await self._submit_order(memory)
@@ -92,23 +216,48 @@ class OrderWorkflow:
                 memory.order_status = "collecting"
                 return "Of course. What would you like to change?"
 
-        if memory.order_status == "awaiting_quantity":
-            pending_item = self._pending_item(memory)
+        # ── Quantity slot ───────────────────────────────────────────────────
+        if memory.order_status == "awaiting_quantity" or (
+            not memory.order_status and memory.pending_item()
+        ):
+            pending_item = memory.pending_item()
             if not pending_item:
                 memory.order_status = "collecting"
                 return "What would you like to order?"
+
             quantity = self._quantity(text)
+
+            # Check for quantity FIRST — "actually three" should extract qty=3, not redirect
+            if quantity > 0 or self._has_quantity(text):
+                # It's a quantity response — proceed with adding the item
+                pass
+            elif self._looks_like_item_change(text):
+                # "actually burger" (no quantity) → redirect to item selection
+                memory.clear_pending_slot()
+                memory.order_status = "collecting"
+                return "Of course. What would you like instead?"
+            else:
+                # Not a quantity response and not an item change — fall through
+                return None
+
+            # Cap quantity at 1 if no explicit number
+            if quantity == 0:
+                quantity = 1
+
             item = await self._item_by_id(int(pending_item["menu_item_id"]))
-            memory.order_state["pending_item"] = None
+            memory.clear_pending_slot()
             if not item:
                 memory.order_status = "collecting"
                 return "I could not find that menu item anymore. What would you like instead?"
             if not item.available:
                 memory.order_status = "collecting"
                 return await self._sold_out_response(item)
+
             self._add_item(memory, item, quantity)
+            memory.clear_pending_slot()
             return self._next_order_prompt(memory, f"I've added {quantity} x {item.name}.")
 
+        # ── Delivery method slot ────────────────────────────────────────────
         if memory.order_status == "awaiting_delivery_method":
             delivery_method = self._delivery_method(text)
             if not delivery_method:
@@ -116,10 +265,12 @@ class OrderWorkflow:
             memory.order_state["delivery_method"] = delivery_method
             return self._next_order_prompt(memory)
 
+        # ── Address slot ────────────────────────────────────────────────────
         if memory.order_status == "awaiting_address":
             memory.order_state["address"] = message.strip()
             return self._next_order_prompt(memory)
 
+        # ── Payment method slot ─────────────────────────────────────────────
         if memory.order_status == "awaiting_payment_method":
             payment_method = self._payment_method(text)
             if not payment_method:
@@ -128,13 +279,16 @@ class OrderWorkflow:
             memory.payment_method = payment_method
             return self._next_order_prompt(memory)
 
+        # ── Customer name slot ──────────────────────────────────────────────
         if memory.order_status == "awaiting_customer_name" and not memory.customer_name:
             memory.customer_name = self._name_from_reply(message)
             return self._next_order_prompt(memory)
 
+        # ── Remove items ────────────────────────────────────────────────────
         if self._is_remove(text):
             return self._remove_item(text, memory)
 
+        # ── New item selection ──────────────────────────────────────────────
         item = lookup.get("item")
         if memory.order_status == "paid" and (item or lookup.get("requested_name")):
             memory.order_id = None
@@ -145,7 +299,7 @@ class OrderWorkflow:
             if not item.available:
                 return await self._sold_out_response(item)
             if not self._has_quantity(text):
-                memory.order_state["pending_item"] = self._menu_line(item)
+                memory.set_pending_slot("awaiting_quantity", self._menu_line(item))
                 memory.order_status = "awaiting_quantity"
                 return f"Great choice! {item.name} is available. How many would you like?"
             quantity = self._quantity(text)
@@ -155,7 +309,7 @@ class OrderWorkflow:
         requested_name = lookup.get("requested_name")
         if requested_name:
             memory.order_status = "collecting"
-            return await self._not_found_response(requested_name)
+            return await self._not_found_response(requested_name, memory)
 
         if self._is_ready_to_order(text):
             return self._next_order_prompt(memory)
@@ -165,6 +319,10 @@ class OrderWorkflow:
 
         memory.order_status = "collecting"
         return "Of course. What would you like to order?"
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Order history & reorder
+    # ────────────────────────────────────────────────────────────────────────
 
     async def _handle_order_history(self, text: str, memory: ConversationMemory) -> str:
         args = self._identity_args(memory)
@@ -196,7 +354,7 @@ class OrderWorkflow:
             if not isinstance(order, dict):
                 memory.order_status = "collecting"
                 return "I lost track of that previous order. Please ask me to show it again."
-            unavailable = await self._unavailable_reorder_items(order)
+            unavailable = await self._unavailable_reorder_items(order, memory)
             if unavailable:
                 memory.order_state["pending_reorder"] = None
                 memory.order_status = "collecting"
@@ -233,6 +391,10 @@ class OrderWorkflow:
             memory.order_status = "awaiting_reorder_confirmation"
         return result.message
 
+    # ────────────────────────────────────────────────────────────────────────
+    # Order submission & payment
+    # ────────────────────────────────────────────────────────────────────────
+
     async def _submit_order(self, memory: ConversationMemory) -> str:
         if not memory.current_order_items():
             memory.order_status = "collecting"
@@ -248,6 +410,7 @@ class OrderWorkflow:
             "manage_order",
             {
                 "action": "create",
+                "confirmed": True,  # User already confirmed at the awaiting_confirmation prompt
                 "customer_id": memory.customer_id,
                 "customer_name": customer_name,
                 "email": memory.email,
@@ -266,17 +429,16 @@ class OrderWorkflow:
         memory.order_status = "awaiting_payment"
         memory.payment_status = "pending"
         method = memory.order_state.get("payment_method")
-        if method == "mobile_money":
-            payment = await self.agent._execute_tool(
-                "process_payment",
-                {"order_id": memory.order_id, "payment_method": method},
-                memory,
-            )
-            return f"{result.message} {payment.message}"
         if method:
             payment = await self.agent._execute_tool(
                 "process_payment",
-                {"order_id": memory.order_id, "payment_method": method, "payment_confirmed": True},
+                {
+                    "order_id": memory.order_id,
+                    "payment_method": method,
+                    "confirmed": True,
+                    "customer_email": memory.email or f"{memory.customer_name or 'guest'}@guest.local",
+                    "customer_name": memory.customer_name or "Guest",
+                },
                 memory,
             )
             return f"{result.message} {payment.message}"
@@ -304,8 +466,9 @@ class OrderWorkflow:
             {
                 "order_id": memory.order_id,
                 "payment_method": method,
-                "payment_confirmed": payment_confirmed,
-                "simulate_failure": self._wants_failure(text),
+                "confirmed": payment_confirmed,
+                "customer_email": memory.email or f"{memory.customer_name or 'customer'}@guest.local",
+                "customer_name": memory.customer_name or "Customer",
             },
             memory,
         )
@@ -323,10 +486,15 @@ class OrderWorkflow:
             memory.reset_order_state()
         return result.message
 
+    # ────────────────────────────────────────────────────────────────────────
+    # Prompt helpers
+    # ────────────────────────────────────────────────────────────────────────
+
     def _next_order_prompt(self, memory: ConversationMemory, prefix: str | None = None) -> str:
         self._ensure_order_state(memory)
         if not memory.current_order_items():
             memory.order_status = "collecting"
+            memory.clear_pending_slot()
             prompt = "What would you like to order?"
         elif not memory.order_state.get("delivery_method"):
             memory.order_status = "awaiting_delivery_method"
@@ -400,9 +568,13 @@ class OrderWorkflow:
         lines.append(f"Payment Method: {self._display(payment_method)}")
         return "\n".join(lines)
 
+    # ────────────────────────────────────────────────────────────────────────
+    # Menu lookup helpers
+    # ────────────────────────────────────────────────────────────────────────
+
     async def _lookup_menu_request(self, text: str, memory: ConversationMemory) -> dict[str, Any]:
         requested_name = self._requested_item_name(text)
-        items = await sync_to_async(lambda: list(MenuItem.objects.all()))()
+        items = await sync_to_async(self.menu_service.list_all)()
         item = self._match_menu_item(items, text)
         if not item and requested_name:
             item = self._match_menu_item(items, requested_name.lower())
@@ -428,9 +600,11 @@ class OrderWorkflow:
         best_score, _, best_item = scored[0]
         return best_item if best_score >= 2 or (best_score == 1 and len(scored) == 1) else None
 
-    async def _not_found_response(self, requested_name: str) -> str:
+    async def _not_found_response(self, requested_name: str, memory: ConversationMemory | None = None) -> str:
         alternatives = await self._alternatives(requested_name=requested_name)
         if not alternatives:
+            if memory:
+                memory.order_status = "awaiting_menu_confirmation"
             return f"We don't currently have {requested_name} on our menu. Would you like to see the menu?"
         return (
             f"We don't currently have {requested_name} on our menu.\n\n"
@@ -455,42 +629,21 @@ class OrderWorkflow:
         requested_name: str | None = None,
         item: MenuItem | None = None,
     ) -> list[MenuItem]:
-        available = await sync_to_async(lambda: list(MenuItem.objects.filter(available=True)))()
-        requested_words = _words(requested_name or "")
-        requested_words |= _cuisine_hint_words(requested_name or "")
-        if item:
-            requested_words |= _words(item.name)
-            requested_words |= _words(item.description)
-        scored: list[tuple[int, float, MenuItem]] = []
-        for candidate in available:
-            if item and candidate.id == item.id:
-                continue
-            candidate_words = _words(candidate.name) | _words(candidate.description)
-            score = len(requested_words & candidate_words)
-            if item and candidate.category == item.category:
-                score += 5
-            if item and candidate.vegetarian == item.vegetarian:
-                score += 1
-            if item and candidate.spicy == item.spicy:
-                score += 1
-            fallback_score = 1 if not requested_words else 0
-            scored.append((score or fallback_score, -candidate.price, candidate))
-        scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
-        positive = [row for row in scored if row[0] > 0]
-        candidates = positive or scored
-        return [candidate for _, _, candidate in candidates[:3]]
+        return await sync_to_async(self.menu_service.find_alternatives)(
+            item=item, requested_name=requested_name, max_results=3
+        )
 
-    async def _unavailable_reorder_items(self, order: dict) -> str | None:
+    async def _unavailable_reorder_items(self, order: dict, memory: ConversationMemory | None = None) -> str | None:
         for line in order.get("items", []):
-            item = await sync_to_async(lambda: MenuItem.objects.filter(id=int(line["menu_item_id"])).first())()
+            item = await sync_to_async(self.menu_service.get_item)(int(line["menu_item_id"]))
             if not item:
-                return await self._not_found_response(line.get("item_name", "that item"))
+                return await self._not_found_response(line.get("item_name", "that item"), memory)
             if not item.available:
                 return await self._sold_out_response(item)
         return None
 
     async def _item_by_id(self, menu_item_id: int) -> MenuItem | None:
-        return await sync_to_async(lambda: MenuItem.objects.filter(id=menu_item_id).first())()
+        return await sync_to_async(self.menu_service.get_item)(menu_item_id)
 
     def _identity_args(self, memory: ConversationMemory) -> dict[str, Any]:
         return {
@@ -511,10 +664,6 @@ class OrderWorkflow:
         for key, value in defaults.items():
             memory.order_state.setdefault(key, value)
 
-    def _pending_item(self, memory: ConversationMemory) -> dict[str, Any] | None:
-        item = memory.order_state.get("pending_item")
-        return item if isinstance(item, dict) else None
-
     def _menu_line(self, item: MenuItem) -> dict[str, Any]:
         return {
             "menu_item_id": item.id,
@@ -526,7 +675,7 @@ class OrderWorkflow:
         return "\n".join(f"- {item.name}: ${item.price:.2f}" for item in items)
 
     def _payment_method_prompt(self) -> str:
-        return "How would you like to pay? We accept card, cash, mobile money, or gift card."
+        return "How would you like to pay? We accept cash or Chapa for online payments (Telebirr, CBE Birr, bank card)."
 
     def _display(self, value: str) -> str:
         return value.replace("_", " ").title()
@@ -547,6 +696,11 @@ class OrderWorkflow:
             "awaiting_confirmation",
         }:
             return True
+        # Self-heal: if there are active order items but order_status was lost
+        # (e.g., state persistence issue between requests), still handle the message
+        # so the workflow can figure out the correct next step from order_state.
+        if memory.current_order_items() or memory.pending_item():
+            return True
         if lookup.get("item") or lookup.get("requested_name"):
             return True
         return any(word in text for word in ["order", "add", "remove", "cart", "checkout"])
@@ -557,6 +711,10 @@ class OrderWorkflow:
         if memory.payment_status in {"pending", "failed"} and memory.order_id:
             return True
         return any(word in text for word in self.payment_words) and bool(memory.order_id)
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Text classification helpers
+    # ────────────────────────────────────────────────────────────────────────
 
     def _is_ready_to_order(self, text: str) -> bool:
         return any(word in text for word in self.ready_words)
@@ -569,6 +727,8 @@ class OrderWorkflow:
 
     def _is_cancel(self, text: str) -> bool:
         if "clear order" in text or "start over" in text:
+            return True
+        if "never mind" in text or "forget it" in text or "nothing" in text:
             return True
         return bool(re.search(r"\bcancel\b", text))
 
@@ -601,7 +761,7 @@ class OrderWorkflow:
         for word, value in self._number_words().items():
             if re.search(rf"\b{word}\b", text):
                 return value
-        return 1
+        return 0
 
     def _number_words(self) -> dict[str, int]:
         return {
@@ -626,13 +786,19 @@ class OrderWorkflow:
 
     def _payment_method(self, text: str) -> str | None:
         if "mobile" in text or "mobile money" in text or "mpesa" in text or "m-pesa" in text:
-            return "mobile_money"
+            return "chapa"  # Chapa handles Telebirr (mobile money)
         if "gift" in text:
-            return "gift_card"
+            return None  # Gift cards not supported yet
         if "card" in text or "credit" in text or "debit" in text:
-            return "card"
+            return "chapa"  # Chapa handles bank cards
         if "cash" in text:
             return "cash"
+        if "chapa" in text:
+            return "chapa"
+        if "telebirr" in text:
+            return "telebirr"
+        if "cbe" in text:
+            return "cbe_birr"
         return None
 
     def _wants_failure(self, text: str) -> bool:

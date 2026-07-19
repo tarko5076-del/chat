@@ -60,6 +60,14 @@ const authSlice = createSlice({
         user?: AuthUser;
       }>,
     ) {
+      // Clear ALL chat-related localStorage keys on login/register to prevent data leakage
+      const allKeys = Object.keys(localStorage);
+      allKeys.forEach(key => {
+        if (key.startsWith('resto-chat') || key.startsWith('resto-active-conversation')) {
+          localStorage.removeItem(key);
+        }
+      });
+
       state.token = action.payload.access;
       state.isAuthenticated = true;
       localStorage.setItem("access_token", action.payload.access);
@@ -79,6 +87,14 @@ const authSlice = createSlice({
       localStorage.setItem("user", JSON.stringify(action.payload));
     },
     logout(state) {
+      // Clear ALL chat-related localStorage keys
+      const allKeys = Object.keys(localStorage);
+      allKeys.forEach(key => {
+        if (key.startsWith('resto-chat') || key.startsWith('resto-active-conversation')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
       state.token = null;
       state.refreshToken = null;
       state.user = null;

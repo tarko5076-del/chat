@@ -1,0 +1,182 @@
+[
+  {
+    "model": "menu.MenuItem",
+    "pk": 1,
+    "fields": {
+      "name": "Margherita Pizza",
+      "description": "Classic tomato sauce, mozzarella, and fresh basil",
+      "price": "12.99",
+      "category": "main",
+      "vegetarian": true,
+      "vegan": false,
+      "spicy": false,
+      "available": true,
+      "allergens": "dairy, gluten"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 2,
+    "fields": {
+      "name": "Pepperoni Pizza",
+      "description": "Tomato sauce, mozzarella, and pepperoni",
+      "price": "14.99",
+      "category": "main",
+      "vegetarian": false,
+      "vegan": false,
+      "spicy": false,
+      "available": true,
+      "allergens": "dairy, gluten, meat"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 3,
+    "fields": {
+      "name": "Spicy Hawaiian Pizza",
+      "description": "Tomato sauce, mozzarella, ham, pineapple, and jalapeños",
+      "price": "15.99",
+      "category": "main",
+      "vegetarian": false,
+      "vegan": false,
+      "spicy": true,
+      "available": true,
+      "allergens": "dairy, gluten, meat, pineapple"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 4,
+    "fields": {
+      "name": "Vegan Veggie Pizza",
+      "description": "Tomato sauce, vegan cheese, bell peppers, mushrooms, and olives",
+      "price": "13.99",
+      "category": "main",
+      "vegetarian": true,
+      "vegan": true,
+      "spicy": false,
+      "available": true,
+      "allergens": "gluten"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 5,
+    "fields": {
+      "name": "Spaghetti Carbonara",
+      "description": "Creamy pasta with bacon, egg, and parmesan",
+      "price": "16.99",
+      "category": "main",
+      "vegetarian": false,
+      "vegan": false,
+      "spicy": false,
+      "available": true,
+      "allergens": "dairy, gluten, eggs, meat"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 6,
+    "fields": {
+      "name": "Grilled Salmon",
+      "description": "Fresh Atlantic salmon with lemon butter sauce and vegetables",
+      "price": "22.99",
+      "category": "main",
+      "vegetarian": false,
+      "vegan": false,
+      "spicy": false,
+      "available": true,
+      "allergens": "fish, dairy"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 7,
+    "fields": {
+      "name": "Caesar Salad",
+      "description": "Romaine lettuce, parmesan, croutons, and caesar dressing",
+      "price": "9.99",
+      "category": "appetizer",
+      "vegetarian": true,
+      "vegan": false,
+      "spicy": false,
+      "available": true,
+      "allergens": "dairy, gluten, eggs"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 8,
+    "fields": {
+      "name": "Garlic Bread",
+      "description": "Toasted bread with garlic butter and herbs",
+      "price": "6.99",
+      "category": "appetizer",
+      "vegetarian": true,
+      "vegan": false,
+      "spicy": false,
+      "available": true,
+      "allergens": "dairy, gluten"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 9,
+    "fields": {
+      "name": "Chocolate Lava Cake",
+      "description": "Warm chocolate cake with molten center and vanilla ice cream",
+      "price": "8.99",
+      "category": "dessert",
+      "vegetarian": true,
+      "vegan": false,
+      "spicy": false,
+      "available": true,
+      "allergens": "dairy, gluten, eggs"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 10,
+    "fields": {
+      "name": "Tiramisu",
+      "description": "Classic Italian dessert with espresso-soaked ladyfingers and mascarpone",
+      "price": "7.99",
+      "category": "dessert",
+      "vegetarian": true,
+      "vegan": false,
+      "spicy": false,
+      "available": true,
+      "allergens": "dairy, eggs, coffee"
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 11,
+    "fields": {
+      "name": "Coca-Cola",
+      "description": "Classic carbonated soft drink",
+      "price": "2.99",
+      "category": "drink",
+      "vegetarian": true,
+      "vegan": true,
+      "spicy": false,
+      "available": true,
+      "allergens": ""
+    }
+  },
+  {
+    "model": "menu.MenuItem",
+    "pk": 12,
+    "fields": {
+      "name": "Fresh Lemonade",
+      "description": "House-made lemonade with fresh lemons",
+      "price": "3.99",
+      "category": "drink",
+      "vegetarian": true,
+      "vegan": true,
+      "spicy": false,
+      "available": true,
+      "allergens": ""
+    }
+  }
+]

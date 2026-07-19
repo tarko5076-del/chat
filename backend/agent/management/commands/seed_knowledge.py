@@ -106,7 +106,20 @@ PROMOTIONS = [
 class Command(BaseCommand):
     help = "Seed knowledge base with menu items, policies, FAQs, and promotions"
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Clear existing knowledge base and re-seed (re-embed everything)",
+        )
+
     def handle(self, *args, **options):
+        if options["force"]:
+            self.stdout.write("Force re-seeding...")
+            KnowledgeBase.objects.all().delete()
+        elif KnowledgeBase.objects.exists():
+            self.stdout.write(self.style.WARNING("Knowledge base already seeded. Use --force to re-seed."))
+            return
         self._seed()
 
     def _seed(self):
@@ -124,12 +137,12 @@ class Command(BaseCommand):
                         f"{menu_item.name} - ${float(menu_item.price):.2f}\n"
                         f"{menu_item.description}\n"
                         f"Category: {menu_item.category}\n"
-                        f"Available: {'Yes' if menu_item.is_available else 'No'}"
+                        f"Available: {'Yes' if menu_item.available else 'No'}"
                     ),
                     "metadata": {
                         "price": float(menu_item.price),
                         "category": menu_item.category,
-                        "is_available": menu_item.is_available,
+                        "is_available": menu_item.available,
                     },
                 }
             )

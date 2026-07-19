@@ -1,17 +1,48 @@
-__pycache__
-*.pyc
-*.pyo
-.git
-.gitignore
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+*.egg
+venv/
+.venv/
+env/
+*.db
+*.sqlite3
+db.sqlite3
+
+# --- Environment ---
 .env
+.env.local
 .env.*
 !.env.example
-db.sqlite3
-*.egg-info
-dist
-build
-.pytest_cache
-venv
-.venv
-*.log
-staticfiles
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Git ---
+.git/
+.gitignore
+.gitattributes
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Static files ---
+staticfiles/
+static/
+
+# --- Documentation ---
+README.md
+AGENTS.md
+
+# --- Backend data ---
+data/
+nul

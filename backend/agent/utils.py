@@ -30,7 +30,7 @@ def words(text):
     return {
         word
         for word in re.findall(r"[a-z0-9]+", text.lower())
-        if word not in STOP_WORDS and len(word) > 1
+        if word not in STOP_WORDS and (len(word) > 1 or word.isdigit())
     }
 
 

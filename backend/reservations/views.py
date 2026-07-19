@@ -1,13 +1,21 @@
 from rest_framework import permissions, viewsets
 
-from .cleanup import periodic_hold_cleanup
-from .models import Reservation
-from .serializers import ReservationSerializer, ReservationCreateSerializer
+from reservations.cleanup import periodic_hold_cleanup
+from reservations.models import Reservation
+from reservations.serializers import ReservationSerializer, ReservationCreateSerializer
+from reservations.services import ReservationService
 
 
 class ReservationViewSet(viewsets.ModelViewSet):
-    queryset = Reservation.objects.all()
-    permission_classes = [permissions.AllowAny]
+    """Reservation management — requires authentication, scoped to the current user.
+
+    Staff/admin can see all reservations. Customers see only their own.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.service = ReservationService()
 
     def list(self, request, *args, **kwargs):
         periodic_hold_cleanup()
@@ -19,11 +27,17 @@ class ReservationViewSet(viewsets.ModelViewSet):
         return ReservationSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        customer_id = self.request.query_params.get("customer_id")
+        qs = Reservation.objects.all()
+        user = self.request.user
+
+        if user.role in ("staff", "admin"):
+            status_filter = self.request.query_params.get("status")
+            if status_filter:
+                qs = qs.filter(status=status_filter)
+            return qs
+
+        qs = qs.filter(customer_id=str(user.id))
         status_filter = self.request.query_params.get("status")
-        if customer_id:
-            qs = qs.filter(customer_id=customer_id)
         if status_filter:
             qs = qs.filter(status=status_filter)
         return qs

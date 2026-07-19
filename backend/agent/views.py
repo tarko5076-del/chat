@@ -2,7 +2,7 @@ import json
 
 from asgiref.sync import async_to_sync
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import permissions, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
@@ -26,8 +26,57 @@ def _format_sse(event: dict) -> str:
     return f"data: {json.dumps(event, default=str)}\n\n"
 
 
+def _build_memory_from_session(session, history, customer_name, email, phone):
+    """Build a ConversationMemory from session history + persisted state.
+
+    Restores order workflow state (order_status, order_state, payment_method,
+    payment_status) from session metadata so multi-step flows like quantity
+    selection, delivery method, and payment method persist across requests.
+    """
+    memory = ConversationMemory.from_history(history)
+
+    # Restore persisted conversational state from session metadata
+    if session and session.metadata:
+        mem_state = session.metadata.get("memory_state")
+        if mem_state and isinstance(mem_state, dict):
+            memory.order_id = mem_state.get("order_id") or memory.order_id
+            memory.order_status = mem_state.get("order_status")
+            memory.order_state = mem_state.get("order_state") or memory.order_state
+            memory.payment_method = mem_state.get("payment_method") or memory.payment_method
+            memory.payment_status = mem_state.get("payment_status")
+            memory.payment_id = mem_state.get("payment_id")
+            memory.reservation_id = mem_state.get("reservation_id") or memory.reservation_id
+            memory.reservation_date = mem_state.get("reservation_date") or memory.reservation_date
+            memory.reservation_time = mem_state.get("reservation_time") or memory.reservation_time
+            memory.party_size = mem_state.get("party_size") or memory.party_size
+
+    if customer_name:
+        memory.customer_name = customer_name
+    if email:
+        memory.email = email
+    if phone:
+        memory.phone = phone
+
+    return memory
+
+
+def _save_memory_state(session, memory):
+    """Persist conversation memory state into session metadata.
+
+    This preserves order workflow state so it survives across requests.
+    """
+    state = memory.to_state()
+    # Remove fields that are derivable from conversation history
+    state.pop("customer_name", None)
+    state.pop("customer_id", None)
+    state.pop("email", None)
+    state.pop("phone", None)
+    session.metadata["memory_state"] = state
+    session.save(update_fields=["metadata", "updated_at"])
+
+
 class ChatView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     throttle_classes = [ChatStreamThrottle]
 
     def post(self, request):
@@ -38,10 +87,11 @@ class ChatView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        customer_id = request.data.get("customer_id")
-        customer_name = request.data.get("customer_name")
-        email = request.data.get("email")
-        phone = request.data.get("phone")
+        # Use authenticated user's ID
+        customer_id = str(request.user.id)
+        customer_name = request.user.username
+        email = request.user.email
+        phone = request.user.phone
         session_id = request.data.get("session_id")
 
         session = None
@@ -49,7 +99,7 @@ class ChatView(APIView):
 
         if session_id:
             try:
-                session = AgentSession.objects.get(id=session_id)
+                session = AgentSession.objects.get(id=session_id, user_id=customer_id)
                 history = [
                     {"role": m.role, "content": m.content}
                     for m in session.messages.all()
@@ -62,13 +112,7 @@ class ChatView(APIView):
         else:
             history = []
 
-        memory = ConversationMemory.from_history(history)
-        if customer_name:
-            memory.customer_name = customer_name
-        if email:
-            memory.email = email
-        if phone:
-            memory.phone = phone
+        memory = _build_memory_from_session(session, history, customer_name, email, phone)
 
         try:
             response_text = async_to_sync(agent.run)(
@@ -91,7 +135,7 @@ class ChatView(APIView):
 
         if not session:
             session = AgentSession.objects.create(
-                user_id=customer_id or "anonymous",
+                user_id=customer_id,
                 title=message[:100] if len(message) > 100 else message,
             )
 
@@ -103,6 +147,9 @@ class ChatView(APIView):
             session.title = title
             session.save(update_fields=["title", "updated_at"])
 
+        # Persist conversation memory state for next request
+        _save_memory_state(session, memory)
+
         return Response({
             "response": response_text,
             "session_id": str(session.id),
@@ -111,10 +158,15 @@ class ChatView(APIView):
 
 
 class ChatStreamView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     throttle_classes = [ChatStreamThrottle]
 
     def post(self, request):
+        """
+        Chat endpoint that uses async_to_sync (same working pattern as ChatView)
+        to process the message and returns the result as SSE-formatted events
+        via a simple StreamingHttpResponse generator.
+        """
         from django.http import StreamingHttpResponse
 
         message = request.data.get("message", "").strip()
@@ -124,10 +176,10 @@ class ChatStreamView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        customer_id = request.data.get("customer_id")
-        customer_name = request.data.get("customer_name")
-        email = request.data.get("email")
-        phone = request.data.get("phone")
+        customer_id = str(request.user.id)
+        customer_name = request.user.username
+        email = request.user.email
+        phone = request.user.phone
         session_id = request.data.get("session_id")
 
         session = None
@@ -135,7 +187,7 @@ class ChatStreamView(APIView):
 
         if session_id:
             try:
-                session = AgentSession.objects.get(id=session_id)
+                session = AgentSession.objects.get(id=session_id, user_id=customer_id)
                 history = [
                     {"role": m.role, "content": m.content}
                     for m in session.messages.all()
@@ -148,71 +200,57 @@ class ChatStreamView(APIView):
         else:
             history = []
 
+        # Build memory (same pattern as ChatView)
+        memory = _build_memory_from_session(session, history, customer_name, email, phone)
+
+        # Process via agent.run (sync wrapper around the async agent, same as ChatView)
+        try:
+            response_text = async_to_sync(agent.run)(
+                message,
+                history,
+                memory,
+                customer_id=customer_id,
+                conversation_id=conversation_id,
+            )
+        except ValueError as error:
+            return Response(
+                {"detail": str(error)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as error:
+            return Response(
+                {"detail": f"Agent error: {str(error)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Create/update session and messages
+        if not session:
+            session = AgentSession.objects.create(
+                user_id=customer_id,
+                title=message[:100] if len(message) > 100 else message,
+            )
+
+        SessionMessage.objects.create(session=session, role="user", content=message)
+        SessionMessage.objects.create(session=session, role="assistant", content=response_text)
+
+        if session.messages.count() <= 2:
+            title = message[:100] if len(message) > 100 else message
+            session.title = title
+            session.save(update_fields=["title", "updated_at"])
+
+        # Persist conversation memory state for next request
+        _save_memory_state(session, memory)
+
+        # Return a simple generator that wraps the response as SSE events
+        # IMPORTANT: session_id and conversation_id MUST come BEFORE done,
+        # because the frontend SSE parser returns on the 'done' event and
+        # will never process events yielded after it.
         def generate():
-            try:
-                memory = ConversationMemory.from_history(history)
-                if customer_name:
-                    memory.customer_name = customer_name
-                if email:
-                    memory.email = email
-                if phone:
-                    memory.phone = phone
-
-                import asyncio
-
-                final_response = ""
-
-                async def stream_events():
-                    async for event in agent.run_stream(
-                        message,
-                        history,
-                        memory,
-                        customer_id=customer_id,
-                        conversation_id=conversation_id,
-                    ):
-                        yield event
-
-                loop = asyncio.new_event_loop()
-                try:
-                    agen = stream_events()
-                    while True:
-                        try:
-                            event = loop.run_until_complete(agen.__anext__())
-                            if event.get("type") == "done":
-                                final_response = event.get("response", "")
-                            yield _format_sse(event)
-                        except StopAsyncIteration:
-                            break
-                finally:
-                    loop.close()
-
-                if not session:
-                    session = AgentSession.objects.create(
-                        user_id=customer_id or "anonymous",
-                        title=message[:100] if len(message) > 100 else message,
-                    )
-
-                SessionMessage.objects.create(
-                    session=session, role="user", content=message,
-                )
-                SessionMessage.objects.create(
-                    session=session, role="assistant", content=final_response,
-                )
-
-                if session.messages.count() <= 2:
-                    title = message[:100] if len(message) > 100 else message
-                    session.title = title
-                    session.save(update_fields=["title", "updated_at"])
-
-                yield _format_sse({"type": "session_id", "session_id": str(session.id)})
-                yield _format_sse({"type": "conversation_id", "conversation_id": str(session.id)})
-                yield "data: [DONE]\n\n"
-            except ValueError as error:
-                yield _format_sse({"type": "error", "detail": str(error)})
-                yield "data: [DONE]\n\n"
-            except Exception as error:
-                yield _format_sse({"type": "error", "detail": f"Agent error: {str(error)}"})
-                yield "data: [DONE]\n\n"
+            yield _format_sse({"type": "token", "content": response_text})
+            yield _format_sse({"type": "session_id", "session_id": str(session.id)})
+            yield _format_sse({"type": "conversation_id", "conversation_id": str(session.id)})
+            yield _format_sse({"type": "done", "response": response_text, "steps": 0})
+            yield "data: [DONE]\n\n"
 
         response = StreamingHttpResponse(
             generate(),
@@ -244,6 +282,82 @@ class CustomerMemoryView(APIView):
                 {"detail": f"Failed to load memory: {str(error)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class MemoryFactsView(APIView):
+    """List and manage semantic memory facts for the authenticated user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        customer_id = str(request.user.id)
+        category = request.query_params.get("category")
+
+        facts = memory_manager.get_semantic_facts(customer_id=customer_id)
+
+        # Optionally filter by category
+        if category:
+            facts = [f for f in facts if f.get("category") == category]
+
+        return Response({
+            "count": len(facts),
+            "results": facts,
+        })
+
+    def delete(self, request):
+        """Delete a specific semantic fact by ID."""
+        customer_id = str(request.user.id)
+        fact_id = request.data.get("fact_id") or request.query_params.get("fact_id")
+
+        if fact_id:
+            deleted = memory_manager.delete_semantic_fact(
+                fact_id=int(fact_id),
+                customer_id=customer_id,
+            )
+            if not deleted:
+                return Response(
+                    {"detail": "Fact not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response({"detail": "Fact deleted."})
+
+        # Delete all facts if ?all=true
+        if request.query_params.get("all") == "true":
+            count = memory_manager.delete_all_semantic_facts(customer_id=customer_id)
+            return Response({"detail": f"Deleted {count} facts."})
+
+        return Response(
+            {"detail": "Provide fact_id or ?all=true."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class CustomerProfileView(APIView):
+    """Get the aggregated customer profile for the authenticated user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        customer_id = str(request.user.id)
+        profile = memory_manager.get_profile(customer_id=customer_id)
+        if not profile:
+            return Response({"detail": "Profile not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(profile.to_dict())
+
+
+class EpisodicHistoryView(APIView):
+    """Get recent episodic/tool-call history for the authenticated user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        customer_id = str(request.user.id)
+        limit = min(int(request.query_params.get("limit", 50)), 200)
+        events = memory_manager.get_episodic_history(
+            customer_id=customer_id,
+            limit=limit,
+        )
+        return Response({
+            "count": len(events),
+            "results": events,
+        })
 
 
 class StaffNotificationView(APIView):
@@ -322,26 +436,32 @@ class ToolCallLogView(APIView):
 
 
 class SessionListView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        user_id = request.query_params.get("user_id")
+        # Always filter by authenticated user's ID
+        user_id = request.user.id
         include_archived = request.query_params.get("include_archived", "false") == "true"
 
-        qs = AgentSession.objects.all()
-        if user_id:
-            qs = qs.filter(user_id=user_id)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Fetching sessions for user_id: {user_id}, user: {request.user}")
+
+        qs = AgentSession.objects.filter(user_id=str(user_id))
         if not include_archived:
             qs = qs.filter(is_archived=False)
 
         sessions = list(qs.order_by("-updated_at")[:50])
+        logger.info(f"Found {len(sessions)} sessions for user {user_id}")
+
         return Response({
             "count": qs.count(),
             "results": AgentSessionSerializer(sessions, many=True).data,
         })
 
     def post(self, request):
-        user_id = request.data.get("user_id", "anonymous")
+        # Use authenticated user's ID
+        user_id = str(request.user.id)
         title = request.data.get("title", "New chat")
 
         session = AgentSession.objects.create(user_id=user_id, title=title)

@@ -9,9 +9,10 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-LLM_MAX_RETRIES = 3
-LLM_RETRY_BASE_DELAY = 1.0
-LLM_RETRY_MAX_DELAY = 16.0
+LLM_MAX_RETRIES = 2
+LLM_RETRY_BASE_DELAY = 0.5
+LLM_RETRY_MAX_DELAY = 4.0
+LLM_TIMEOUT = 30.0  # seconds — fail fast so gunicorn workers don't hang
 
 
 @dataclass
@@ -63,7 +64,10 @@ class LLMClient:
         self.fallback_enabled = bool(fallback_key)
 
         if self.enabled:
-            kwargs: dict[str, Any] = {"api_key": api_key}
+            kwargs: dict[str, Any] = {
+                "api_key": api_key,
+                "timeout": LLM_TIMEOUT,
+            }
             if base_url:
                 kwargs["base_url"] = base_url
             self.client = openai.AsyncOpenAI(**kwargs)
@@ -71,7 +75,10 @@ class LLMClient:
             self.client = None
 
         if self.fallback_enabled:
-            fb_kwargs: dict[str, Any] = {"api_key": fallback_key}
+            fb_kwargs: dict[str, Any] = {
+                "api_key": fallback_key,
+                "timeout": LLM_TIMEOUT,
+            }
             if fallback_url:
                 fb_kwargs["base_url"] = fallback_url
             self.fallback_client = openai.AsyncOpenAI(**fb_kwargs)
