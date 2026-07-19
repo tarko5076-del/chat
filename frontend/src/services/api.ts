@@ -284,6 +284,16 @@ export const chatApi = createApi({
       }),
       invalidatesTags: ["Session"],
     }),
+
+    getMetrics: builder.query({
+      query: () => "/metrics/",
+      providesTags: [],
+    }),
+
+    getHealth: builder.query({
+      query: () => "/health/",
+      providesTags: [],
+    }),
   }),
 });
 
@@ -314,6 +324,8 @@ export const {
   useCreateSessionMutation,
   useUpdateSessionMutation,
   useDeleteSessionMutation,
+  useGetMetricsQuery,
+  useGetHealthQuery,
 } = chatApi;
 
 export interface StreamCallbacks {

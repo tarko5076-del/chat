@@ -168,6 +168,14 @@ class ReservationTool(BaseTool):
         }
 
         from reservations.models import RESERVATION_HOLD_MINUTES
+
+        # Record business event for monitoring
+        try:
+            from config.monitoring import record_business_event
+            record_business_event("reservations")
+        except ImportError:
+            pass
+
         return ToolResult(
             success=True,
             message=(
@@ -215,6 +223,13 @@ class ReservationTool(BaseTool):
             logging.getLogger(__name__).debug(
                 "Failed to send reservation confirmation email", exc_info=True
             )
+
+        # Record business event for monitoring
+        try:
+            from config.monitoring import record_business_event
+            record_business_event("reservations")
+        except ImportError:
+            pass
 
         return ToolResult(
             success=True,

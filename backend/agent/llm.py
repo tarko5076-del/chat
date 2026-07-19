@@ -1,11 +1,14 @@
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
 import openai
 from django.conf import settings
+
+from config.middleware import sanitize_messages
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +16,39 @@ LLM_MAX_RETRIES = 2
 LLM_RETRY_BASE_DELAY = 0.5
 LLM_RETRY_MAX_DELAY = 4.0
 LLM_TIMEOUT = 30.0  # seconds — fail fast so gunicorn workers don't hang
+
+# ── Audit logging helper (cost tracking, no prompt content) ────────────
+_llm_audit_logger = logging.getLogger("agent.llm_audit")
+
+
+def _log_llm_call(
+    provider: str,
+    model: str,
+    success: bool,
+    duration_ms: float,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Log an LLM call for audit/cost tracking.
+
+    Logs at INFO level. Does NOT log prompt content or response content.
+    Only logs: provider, model, success, duration, token counts, error.
+    """
+    _llm_audit_logger.info(
+        "llm_call provider=%s model=%s success=%s duration_ms=%.0f "
+        "prompt_tokens=%s completion_tokens=%s error=%s",
+        provider, model, success, duration_ms,
+        prompt_tokens or "?", completion_tokens or "?",
+        error or "-",
+    )
+
+    # Update in-process metrics
+    try:
+        from config.monitoring import record_llm_call
+        record_llm_call(success, prompt_tokens or 0, completion_tokens or 0)
+    except ImportError:
+        pass
 
 
 @dataclass
@@ -194,8 +230,37 @@ class LLMClient:
         if not self.client:
             raise ValueError("No LLM API key configured. Set LLM_API_KEY in your environment.")
 
-        response = await self._retry_with_fallback(messages, tools, stream=False)
-        return self._parse_response(response)
+        # Sanitize user messages before sending to LLM
+        messages = sanitize_messages(messages)
+
+        start = time.time()
+        try:
+            response = await self._retry_with_fallback(messages, tools, stream=False)
+            duration_ms = (time.time() - start) * 1000
+
+            usage = getattr(response, "usage", None)
+            prompt_tokens = usage.prompt_tokens if usage else None
+            completion_tokens = usage.completion_tokens if usage else None
+
+            _log_llm_call(
+                provider="primary",
+                model=self.model,
+                success=True,
+                duration_ms=duration_ms,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+            return self._parse_response(response)
+        except Exception as exc:
+            duration_ms = (time.time() - start) * 1000
+            _log_llm_call(
+                provider="primary",
+                model=self.model,
+                success=False,
+                duration_ms=duration_ms,
+                error=exc.__class__.__name__,
+            )
+            raise
 
     async def complete_with_tools_stream(
         self,
@@ -205,74 +270,101 @@ class LLMClient:
         if not self.client:
             raise ValueError("No LLM API key configured. Set LLM_API_KEY in your environment.")
 
-        stream = await self._retry_with_fallback(messages, tools, stream=True)
-        tool_calls_buffer: dict[int, StreamToolCallDelta] = {}
+        # Sanitize user messages before sending to LLM
+        messages = sanitize_messages(messages)
 
-        async for chunk in stream:
-            choice = chunk.choices[0] if chunk.choices else None
-            if not choice:
-                continue
+        start = time.time()
+        total_content_chars = 0
+        total_tool_arg_chars = 0
+        error_name: str | None = None
 
-            delta = choice.delta
-            finish_reason = choice.finish_reason
+        try:
+            stream = await self._retry_with_fallback(messages, tools, stream=True)
+            tool_calls_buffer: dict[int, StreamToolCallDelta] = {}
 
-            if delta and delta.content:
-                yield {
-                    "delta": StreamDelta(content=delta.content),
-                    "finish_reason": None,
-                }
+            async for chunk in stream:
+                choice = chunk.choices[0] if chunk.choices else None
+                if not choice:
+                    continue
 
-            if delta and delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in tool_calls_buffer:
-                        tool_calls_buffer[idx] = StreamToolCallDelta(
-                            index=idx,
-                            id=tc_delta.id or "",
-                            function=StreamFunctionDelta(
-                                name=tc_delta.function.name if tc_delta.function else None,
-                                arguments="",
-                            ),
-                        )
-                    else:
-                        if tc_delta.id:
-                            tool_calls_buffer[idx].id = tc_delta.id
+                delta = choice.delta
+                finish_reason = choice.finish_reason
 
-                    if tc_delta.function:
-                        if tc_delta.function.name:
-                            tool_calls_buffer[idx].function.name = tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            existing = tool_calls_buffer[idx].function.arguments or ""
-                            tool_calls_buffer[idx].function.arguments = (
-                                existing + tc_delta.function.arguments
+                if delta and delta.content:
+                    total_content_chars += len(delta.content)
+                    yield {
+                        "delta": StreamDelta(content=delta.content),
+                        "finish_reason": None,
+                    }
+
+                if delta and delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in tool_calls_buffer:
+                            tool_calls_buffer[idx] = StreamToolCallDelta(
+                                index=idx,
+                                id=tc_delta.id or "",
+                                function=StreamFunctionDelta(
+                                    name=tc_delta.function.name if tc_delta.function else None,
+                                    arguments="",
+                                ),
                             )
+                        else:
+                            if tc_delta.id:
+                                tool_calls_buffer[idx].id = tc_delta.id
 
-            if finish_reason:
-                assembled = [tool_calls_buffer[i] for i in sorted(tool_calls_buffer)]
+                        if tc_delta.function:
+                            if tc_delta.function.name:
+                                tool_calls_buffer[idx].function.name = tc_delta.function.name
+                            if tc_delta.function.arguments:
+                                total_tool_arg_chars += len(tc_delta.function.arguments)
+                                existing = tool_calls_buffer[idx].function.arguments or ""
+                                tool_calls_buffer[idx].function.arguments = (
+                                    existing + tc_delta.function.arguments
+                                )
 
-                if finish_reason == "tool_calls" and assembled:
-                    yield {
-                        "delta": StreamDelta(tool_calls=assembled),
-                        "finish_reason": "tool_calls",
-                    }
-                else:
-                    yield {
-                        "delta": StreamDelta(),
-                        "finish_reason": "stop",
-                    }
-                return
+                if finish_reason:
+                    assembled = [tool_calls_buffer[i] for i in sorted(tool_calls_buffer)]
 
-        assembled = [tool_calls_buffer[i] for i in sorted(tool_calls_buffer)]
-        if assembled:
-            yield {
-                "delta": StreamDelta(tool_calls=assembled),
-                "finish_reason": "tool_calls",
-            }
-        else:
-            yield {
-                "delta": StreamDelta(),
-                "finish_reason": "stop",
-            }
+                    if finish_reason == "tool_calls" and assembled:
+                        yield {
+                            "delta": StreamDelta(tool_calls=assembled),
+                            "finish_reason": "tool_calls",
+                        }
+                    else:
+                        yield {
+                            "delta": StreamDelta(),
+                            "finish_reason": "stop",
+                        }
+                    return
+
+            # Stream ended without a finish_reason chunk (disconnect / edge case)
+            assembled = [tool_calls_buffer[i] for i in sorted(tool_calls_buffer)]
+            if assembled:
+                yield {
+                    "delta": StreamDelta(tool_calls=assembled),
+                    "finish_reason": "tool_calls",
+                }
+            else:
+                yield {
+                    "delta": StreamDelta(),
+                    "finish_reason": "stop",
+                }
+        except Exception as exc:
+            error_name = exc.__class__.__name__
+            raise
+        finally:
+            duration_ms = (time.time() - start) * 1000
+            estimated_tokens = (total_content_chars + total_tool_arg_chars) // 3
+            _log_llm_call(
+                provider="primary",
+                model=self.model,
+                success=error_name is None,
+                duration_ms=duration_ms,
+                prompt_tokens=None,  # streaming — no prompt usage available
+                completion_tokens=estimated_tokens,
+                error=error_name,
+            )
 
 
 def tool_arguments(raw: str | None) -> dict[str, Any]:

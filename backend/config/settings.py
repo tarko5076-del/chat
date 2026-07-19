@@ -51,6 +51,9 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "config.urls"
 
+# ── Production: track LLM provider usage per minute ─────────────────────
+LLM_TRACK_USAGE = os.getenv("LLM_TRACK_USAGE", "true").lower() == "true"
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",

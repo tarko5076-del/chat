@@ -143,6 +143,13 @@ class PaymentTool(BaseTool):
                 next_action="ask_user",
             )
 
+        # Record business event for monitoring
+        try:
+            from config.monitoring import record_business_event
+            record_business_event("payments")
+        except ImportError:
+            pass
+
         # Cash payment
         if method == "cash":
             return ToolResult(

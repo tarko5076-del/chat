@@ -379,6 +379,14 @@ class ReActLoop:
         )
         if self._tool_trace_callback:
             await sync_to_async(self._tool_trace_callback)(name, args, result, duration_ms)
+
+        # Record tool call in metrics
+        try:
+            from config.monitoring import record_tool_call
+            record_tool_call(result.success)
+        except ImportError:
+            pass
+
         return result
 
     def _detect_action_type(self, tool_name: str, result: ToolResult) -> str | None:

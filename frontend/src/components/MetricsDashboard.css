@@ -1,0 +1,277 @@
+.metrics-dashboard {
+  min-height: 100vh;
+  background: #0d1117;
+  color: #cde7eb;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  padding-bottom: 40px;
+}
+
+.metrics-dashboard__loading,
+.metrics-dashboard__error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  color: #5a6e73;
+  font-size: 0.9rem;
+}
+
+.metrics-dashboard__error {
+  color: #ff7194;
+}
+
+/* ── Header ─────────────────────────────────────── */
+
+.metrics-dashboard__header {
+  padding: 28px 32px 20px;
+  border-bottom: 1px solid rgba(205, 231, 235, 0.08);
+  background: #161b22;
+}
+
+.metrics-dashboard__header h1 {
+  font-size: 1.3rem;
+  margin: 0 0 12px;
+  color: #2fdd71;
+}
+
+.metrics-dashboard__status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+}
+
+.metrics-dashboard__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.metrics-dashboard__status-dot--ok {
+  background: #2fdd71;
+  box-shadow: 0 0 6px rgba(47, 221, 113, 0.5);
+}
+
+.metrics-dashboard__status-dot--error {
+  background: #ff7194;
+  box-shadow: 0 0 6px rgba(255, 113, 148, 0.5);
+}
+
+.metrics-dashboard__status-text {
+  color: #8b9fa4;
+}
+
+.metrics-dashboard__uptime {
+  color: #5a6e73;
+  margin-left: auto;
+}
+
+/* ── Sections ───────────────────────────────────── */
+
+.metrics-section {
+  padding: 24px 32px 8px;
+}
+
+.metrics-section__title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #5a6e73;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 16px;
+}
+
+/* ── Grid ───────────────────────────────────────── */
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* ── Stat Card ──────────────────────────────────── */
+
+.metrics-card {
+  background: #161b22;
+  border: 1px solid rgba(205, 231, 235, 0.08);
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition: border-color 0.15s ease;
+}
+
+.metrics-card:hover {
+  border-color: rgba(205, 231, 235, 0.18);
+}
+
+.metrics-card__icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.metrics-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metrics-card__value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent, #2fdd71);
+  line-height: 1.2;
+}
+
+.metrics-card__label {
+  font-size: 0.78rem;
+  color: #8b9fa4;
+}
+
+.metrics-card__sublabel {
+  font-size: 0.72rem;
+  color: #5a6e73;
+}
+
+/* ── Gauges ─────────────────────────────────────── */
+
+.metrics-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.metrics-gauge {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: #161b22;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  height: 32px;
+}
+
+.metrics-gauge__bar {
+  height: 100%;
+  transition: width 0.5s ease;
+  min-width: 2px;
+  opacity: 0.7;
+}
+
+.metrics-gauge__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  font-size: 0.75rem;
+  color: #cde7eb;
+  font-weight: 600;
+}
+
+/* ── Health Checklist ───────────────────────────── */
+
+.metrics-health-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #161b22;
+  border: 1px solid rgba(205, 231, 235, 0.08);
+  border-radius: 10px;
+  padding: 16px 20px;
+}
+
+.metrics-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 0.82rem;
+}
+
+.metrics-health-row + .metrics-health-row {
+  border-top: 1px solid rgba(205, 231, 235, 0.05);
+}
+
+.metrics-health-row__key {
+  color: #8b9fa4;
+  text-transform: lowercase;
+}
+
+.metrics-health-row__value {
+  font-weight: 600;
+}
+
+.metrics-health-row__value--ok {
+  color: #2fdd71;
+}
+
+.metrics-health-row__value--warn {
+  color: #ffc107;
+}
+
+.metrics-health-row__value--error {
+  color: #ff7194;
+}
+
+/* ── Footer ─────────────────────────────────────── */
+
+.metrics-dashboard__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 32px;
+  font-size: 0.72rem;
+  color: #5a6e73;
+  border-top: 1px solid rgba(205, 231, 235, 0.05);
+  margin-top: 16px;
+}
+
+/* ── Responsive ─────────────────────────────────── */
+
+@media (max-width: 700px) {
+  .metrics-dashboard__header {
+    padding: 20px 20px 16px;
+  }
+
+  .metrics-section {
+    padding: 20px 20px 4px;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics-dashboard__footer {
+    padding: 16px 20px;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 460px) {
+  .metrics-dashboard__header {
+    padding: 16px 16px 12px;
+  }
+
+  .metrics-section {
+    padding: 16px 16px 0;
+  }
+
+  .metrics-card {
+    padding: 14px 16px;
+  }
+
+  .metrics-card__value {
+    font-size: 1.2rem;
+  }
+
+  .metrics-dashboard__footer {
+    padding: 12px 16px;
+  }
+}

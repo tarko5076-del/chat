@@ -1,187 +1,214 @@
-# AI Chatbot
+# Resto AI — Digital Waiter
 
-A simple full-stack AI chatbot application built with React + TypeScript (frontend) and FastAPI (backend), powered by Hugging Face Inference API.
-
-> **Note:** This is a learning-oriented project. No memory, databases, authentication, or streaming — just a straightforward request/response chat.
+An AI-powered restaurant assistant that handles **ordering, reservations, payments, and customer memory** through natural conversation. A real digital waiter for real restaurants.
 
 ---
 
-## Project Structure
+## 🚀 First 5 Minutes
 
-```
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── routes.py          # API route definitions
-│   │   ├── core/
-│   │   │   └── config.py          # Environment configuration
-│   │   ├── schemas/
-│   │   │   └── chat.py            # Pydantic request/response models
-│   │   ├── services/
-│   │   │   └── llm.py             # OpenRouter API communication
-│   │   └── main.py                # FastAPI app entry point
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Chat.tsx           # Main chat container
-│   │   │   ├── ChatInput.tsx      # Input field + send button
-│   │   │   └── Message.tsx        # Individual message bubble
-│   │   ├── services/
-│   │   │   └── api.ts             # Backend API client
-│   │   ├── types/
-│   │   │   └── chat.ts            # TypeScript interfaces
-│   │   ├── App.tsx                # Root component
-│   │   ├── main.tsx               # React entry point
-│   │   └── index.css              # Global styles
-│   ├── index.html
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── vite.config.ts
-├── .env.example
-└── README.md
-```
-
----
-
-## Prerequisites
-
-- **Python 3.12+**
-- **Node.js 18+**
-- **A Hugging Face token** — [Get one here](https://huggingface.co/settings/tokens)
-
----
-
-## Setup Instructions
-
-### 1. Clone the project
+### 0. Set up environment variables
 
 ```bash
-cd first_chatbot
+cp backend/.env.example backend/.env
+# Optional: edit backend/.env and add your Hugging Face token for AI features
+# HF_TOKEN=hf_your_token_here
 ```
 
-### 2. Backend setup
+Without a token, the system still works for ordering, reservations, and payments — just without the AI-driven conversation (uses a rule-based fallback).
+
+### 1. Start the system
 
 ```bash
-# Navigate to the backend directory
+docker compose up --build -d
+```
+
+Wait 30 seconds for all services to become healthy.
+
+### 2. Open the app
+
+→ **http://localhost**
+
+You'll see a login screen.
+
+### 3. Create an account
+
+Click **Sign up** and enter:
+- A username (e.g. `alex`)
+- An email (e.g. `alex@test.com`)
+- A password
+
+Then log in with your email and password.
+
+### 4. Say hello
+
+Type: **`Hi, what's on the menu?`**
+
+The AI agent will respond with the restaurant's menu items, descriptions, and prices.
+
+### 5. Place an order
+
+```
+You:  I'd like a pizza and a soda
+       Actually, make it two pizzas
+       Checkout, pickup, pay with cash
+       Yes, confirm
+```
+
+The agent guides you through each step — quantity, delivery method, payment — and asks for confirmation before placing the order.
+
+### 6. Ask about the restaurant
+
+```
+You:  What are your opening hours?
+      Do you have vegan options?
+      What's your cancellation policy?
+```
+
+The agent answers from a knowledge base.
+
+### 7. Book a table
+
+```
+You:  I want to book a table for tomorrow at 7pm
+      4 people
+      My name is Alex
+      Phone: +1234567890
+      Email: alex@test.com
+      Yes, confirm
+```
+
+### 8. Come back later
+
+When you return and log in again:
+
+```
+You:  Hi, I'm back!
+Agent: Welcome back, Alex! Would you like your usual?
+```
+
+The agent remembers your name, past orders, and preferences.
+
+---
+
+## 🎯 What You Can Do
+
+### As a Customer
+
+| Task | Try typing |
+|------|-----------|
+| Browse menu | `"What's on the menu?"`, `"Show me vegan options under $15"` |
+| Get recommendations | `"Recommend something spicy"`, `"What's popular?"` |
+| Order food | `"I'd like 2 burgers and fries"`, `"Add a salad"` |
+| Checkout | `"Checkout, delivery to 123 Main St, pay with card"` |
+| Cancel order | `"Cancel my order"` |
+| Reorder | `"I want to reorder my last meal"` |
+| Reserve a table | `"Book a table for 4 tomorrow at 7pm"` |
+| Ask questions | `"What are your hours?"`, `"Do you have parking?"` |
+| Set preferences | `"My favorite is Ethiopian coffee"`, `"I don't like spicy"` |
+| View your profile | `"What do you know about me?"` |
+| Request staff | `"I need to speak to a manager"` |
+
+### As Staff
+
+- Visit **http://localhost/staff** — dashboard with active orders, held reservations, and escalation alerts
+- The **sidebar** (click the menu icon) shows menu, order history, reservations, memory facts, and past conversations
+
+### As an Operator
+
+- **http://localhost/health/** — system status (DB, LLM, uptime)
+- **http://localhost/metrics/** — live counters (requests, response times, LLM usage, business events)
+- **http://localhost:8000/admin/** — Django admin (requires superuser)
+
+---
+
+## 📦 Architecture
+
+```
+User → Port 80 (Nginx)
+              │
+         ┌────┴────┐
+         │         │
+   Frontend    Backend :8000
+   (React)     (Django + DRF)
+                   │
+              PostgreSQL 16
+              + pgvector
+```
+
+| Service | Stack |
+|---------|-------|
+| **Frontend** | React + TypeScript + RTK Query + Vite |
+| **Backend** | Django + Django REST Framework + Gunicorn |
+| **Database** | PostgreSQL 16 + pgvector extension |
+| **AI** | Hugging Face Inference API (OpenAI-compatible) |
+| **Embeddings** | Hugging Face / OpenAI (configurable) |
+| **Payments** | Chapa (Ethiopian gateway, demo mode available) |
+
+---
+
+## 🔧 Configuration
+
+Copy `backend/.env.example` to `backend/.env` and configure:
+
+| Variable | Required | What it does |
+|----------|----------|-------------|
+| `HF_TOKEN` | ✅ for AI | Hugging Face API token |
+| `DJANGO_SECRET_KEY` | ✅ | Django secret (generate a random one for production) |
+| `POSTGRES_PASSWORD` | ✅ for Docker | Database password |
+| `CHAPA_SECRET_KEY` | For payments | Chapa payment gateway key |
+
+Without an AI token, the system still works — it uses a rule-based planner for ordering and reservations.
+
+---
+
+## 🧪 Running Tests
+
+```bash
 cd backend
-
-# Create a virtual environment (recommended)
-python -m venv venv
-
-# Activate the virtual environment
-# On Windows:
-venv\Scripts\activate
-# On macOS/Linux:
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy and configure environment variables
-copy ..\.env.example .env
-# (On macOS/Linux: cp ../.env.example .env)
-
-# Edit .env and add your Hugging Face token:
-# HF_TOKEN=your-actual-token
+USE_SQLITE=true python manage.py test menu.tests agent.tests
 ```
 
-### 3. Frontend setup
-
-```bash
-# Navigate to the frontend directory
-cd ../frontend
-
-# Install dependencies
-npm install
-```
+**179 tests — 178 pass** (1 pre-existing `test_payment_idempotency` edge case)
 
 ---
 
-## Running the Application
-
-### Terminal 1 — Backend
+## 📊 Load Testing
 
 ```bash
+pip install locust
 cd backend
-venv\Scripts\activate     # On Windows
-# source venv/bin/activate  # On macOS/Linux
-
-uvicorn app.main:app --reload --port 8000
+locust -f locustfile.py --host=http://localhost --headless \
+  --users 10 --spawn-rate 5 --run-time 2m
 ```
 
-The backend will be available at **http://localhost:8000**.
-
-- API docs (Swagger UI): http://localhost:8000/docs
-- Health check: http://localhost:8000/health
-
-### Terminal 2 — Frontend
-
-```bash
-cd frontend
-npm run dev
-```
-
-The frontend will be available at **http://localhost:5173**.
+See `backend/locustfile.py` for custom scenarios.
 
 ---
 
-## API
+## 📚 Documentation
 
-### POST /api/chat
+All docs are in the `docs/` directory:
 
-Send a message and receive an AI response.
+| Document | What it covers |
+|----------|---------------|
+| `ai-agent-development-roadmap.md` | Milestones, progress, what's next |
+| `deployment-and-infrastructure.md` | Production deployment, backup strategy, secrets, troubleshooting |
+| `api-architecture.md` | API design, endpoints, authentication |
 
-**Request:**
+---
 
-```json
-{
-  "message": "Hello"
-}
+## 🗺️ Roadmap
+
+```
+✅ Milestone 1-6 — Foundation, Tools, Menu, Orders, Payments, Reservations
+✅ Milestone 7   — Customer Memory System
+✅ Milestone 8   — Advanced RAG (hybrid search, knowledge management)
+✅ Milestone 9   — Production Readiness (monitoring, caching, security, load testing)
+⏳ Milestone 10  — Multi-Agent Architecture
 ```
 
-**Response:**
-
-```json
-{
-  "response": "Hello! How can I help?"
-}
-```
-
-### GET /health
-
-Returns `{ "status": "ok" }` if the server is running.
-
 ---
 
-## Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `HF_TOKEN` | — | Your Hugging Face token (required) |
-| `HF_MODEL` | `meta-llama/Llama-3.2-3B-Instruct` | Model to use via Hugging Face |
-| `HF_BASE_URL` | `https://router.huggingface.co/v1` | Hugging Face API base URL |
-| `HOST` | `0.0.0.0` | Backend host |
-| `PORT` | `8000` | Backend port |
-| `DEBUG` | `false` | Enable debug logging |
-
----
-
-## Future Extensions
-
-This project is intentionally minimal and serves as a foundation for adding:
-
-- Conversation memory / history
-- Database persistence (PostgreSQL, SQLite)
-- User authentication
-- Streaming responses
-- Tool / function calling
-- RAG (Retrieval-Augmented Generation)
-- Multi-agent systems
-- Docker containerization
-
----
-
-## License
+## 📄 License
 
 MIT

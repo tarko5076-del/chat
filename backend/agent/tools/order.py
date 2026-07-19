@@ -132,6 +132,13 @@ class OrderTool(BaseTool):
         from agent.email_service import send_order_confirmation
         send_order_confirmation(order)
 
+        # Record business event for monitoring
+        try:
+            from config.monitoring import record_business_event
+            record_business_event("orders")
+        except ImportError:
+            pass
+
         return ToolResult(
             success=True,
             message=f"Order created. ID: {order.id}.",
@@ -221,6 +228,13 @@ class OrderTool(BaseTool):
                 data={"order": order.to_dict()},
                 next_action="ask_user",
             )
+
+        # Record business event for monitoring
+        try:
+            from config.monitoring import record_business_event
+            record_business_event("orders")
+        except ImportError:
+            pass
 
         return ToolResult(
             success=True,

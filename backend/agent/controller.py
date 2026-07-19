@@ -34,7 +34,12 @@ from agent.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
-MAX_HISTORY_MESSAGES = 12
+# Rough token estimation: 1 token ≈ 4 chars for English text
+TOKEN_ESTIMATE_RATIO = 4
+# Target: leave ~2000 tokens for the LLM response within an 8K context
+MAX_PROMPT_TOKENS = 6000
+# Hard cap on history messages regardless of size
+MAX_HISTORY_MESSAGES = 20
 
 
 class LLMError(Exception):
@@ -243,7 +248,8 @@ class RestaurantAgent:
         ]
         if rag_context:
             system_messages.append({"role": "system", "content": rag_context})
-        system_messages.extend(history[-MAX_HISTORY_MESSAGES:])
+        # Smarter history truncation: fit within token budget
+        system_messages.extend(self._select_history(history))
 
         try:
             self.react.set_tool_trace_callback(
@@ -318,7 +324,8 @@ class RestaurantAgent:
         ]
         if rag_context:
             system_messages.append({"role": "system", "content": rag_context})
-        system_messages.extend(history[-MAX_HISTORY_MESSAGES:])
+        # Smarter history truncation: fit within token budget
+        system_messages.extend(self._select_history(history))
 
         final_response = ""
         final_goals: list[dict[str, str]] = []
@@ -450,6 +457,44 @@ class RestaurantAgent:
             SearchKnowledgeTool(),
         ]
         return {tool.name: tool for tool in tools}
+
+    @staticmethod
+    def _select_history(history: list[dict]) -> list[dict]:
+        """Smart history truncation: keep as many recent messages as fit in the token budget.
+
+        Prioritizes the most recent messages. Drops oldest first when over budget.
+        System prompts (role="system") and tool results with important data are preserved
+        over plain assistant responses when trimming.
+        """
+        if not history:
+            return []
+
+        selected: list[dict] = []
+        token_count = 0
+
+        # Walk from the most recent message backwards
+        for msg in reversed(history):
+            content = msg.get("content", "") or ""
+            # Estimate tokens: ~4 chars per token, plus overhead per message
+            msg_tokens = len(str(content)) // TOKEN_ESTIMATE_RATIO + 2
+
+            if token_count + msg_tokens > MAX_PROMPT_TOKENS:
+                # If this is the very first (most recent) message, keep a truncated version
+                if not selected:
+                    truncated = str(content)[:MAX_PROMPT_TOKENS * TOKEN_ESTIMATE_RATIO // 2]
+                    kept = dict(msg)
+                    kept["content"] = truncated + "..."
+                    selected.insert(0, kept)
+                break
+
+            token_count += msg_tokens
+            selected.insert(0, msg)
+
+        logger.info(
+            "History truncation: %d messages → %d messages (~%d estimated tokens)",
+            len(history), len(selected), token_count,
+        )
+        return selected
 
     async def _retrieve_rag_context(self, message: str) -> str:
         """Auto-retrieve relevant knowledge for the user's message."""

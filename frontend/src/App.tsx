@@ -3,6 +3,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { AppShell } from "./AppShell";
 import { PaymentResult } from "./components/PaymentResult";
 import { StaffDashboard } from "./components/StaffDashboard";
+import { MetricsDashboard } from "./components/MetricsDashboard";
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
       <Route path="/history" element={<AppShell />} />
       <Route path="/payment/result" element={<PaymentResult />} />
       <Route path="/staff" element={<StaffDashboard />} />
+      <Route path="/metrics" element={<MetricsDashboard />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

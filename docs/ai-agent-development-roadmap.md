@@ -17,6 +17,8 @@
 - ✅ Milestone 4: Ordering Agent (Complete)
 - ✅ Milestone 6: Reservation Agent (Complete)
 - ✅ Milestone 7: Customer Memory (Complete)
+- ✅ Milestone 8: Advanced RAG (Complete)
+- ✅ Milestone 9: Production Readiness & Optimization (Complete)
 
 
 ---
@@ -104,15 +106,19 @@ Priority order:
 
 ↓
 
-⏳ Milestone 8 — Advanced RAG
+✅ Milestone 8 — Advanced RAG
 
 ↓
 
-⏳ Milestone 9 — Multi-Agent Architecture
+✅ Milestone 9 — Production Readiness & Optimization
 
 ↓
 
-⏳ Milestone 10 — Production Optimization
+⏳ Milestone 10 — Multi-Agent Architecture
+
+↓
+
+⏳ Milestone 11 — Production Intelligence
 
 ```
 
@@ -1175,59 +1181,220 @@ Customer: "Hi, I'm back!"
 ✅ Long-term memory: Preferences persist across sessions
 ```
 
----
+---# ✅ Milestone 8: Advanced RAG System
 
-# Milestone 8: Advanced RAG System
-
+**Status: Complete**
 
 ## Goal
 
-
-Improve knowledge accuracy.
-
+Improve knowledge accuracy with hybrid search (vector + keyword fusion), metadata filtering, re-ranking, and a knowledge management API.
 
 ---
 
-## Features
-
-
-Add:
-
+## Architecture
 
 ```
-Hybrid Search
+User Query
+    ↓
+[HybridSearchEngine] (agent/rag.py — rewritten)
+    ├── Vector Search (pgvector L2, graceful fallback to keyword on SQLite)
+    ├── Keyword Search (PostgreSQL FTS, __icontains fallback for SQLite)
+    ├── Metadata Filtering (content_type, categories, price range, is_active)
+    └── Re-ranking (recency + type-match + keyword density boosts)
+              ↓
+    [Structured context] → formatted for LLM via format_knowledge_context()
 
-Metadata Filtering
+    Agent / Controller → search_knowledge tool → HybridSearchEngine
+                                    ↓
+    [Knowledge Management API] (new)
+        GET/POST /agent/knowledge/              — List/Create
+        GET/PUT/DELETE /agent/knowledge/{id}/   — Detail/Update/Delete
+        POST /agent/knowledge/bulk/             — Bulk upload JSON
+        POST /agent/knowledge/reindex/          — Force re-index all
+```
 
-Re-ranking
+---
 
-Knowledge Management
+## What Was Built
 
-Admin Upload
+### 1. HybridSearchEngine (`backend/agent/rag.py`) — Complete rewrite
 
+| Search Mode | Description |
+|-------------|-------------|
+| `vector` | Pure pgvector L2 similarity (existing, wraps errors on SQLite) |
+| `keyword` | PostgreSQL full-text search via SearchVector/SearchQuery/SearchRank, with SQLite __icontains fallback |
+| `hybrid` (default) | Weighted fusion: `0.7 × vector_similarity + 0.3 × keyword_score` with re-ranking |
+
+Metadata filtering:
+- `content_type` — menu_item, policy, faq, promotion
+- `categories` — filter by metadata `category` (e.g., `["Mains", "Drinks"]`)
+- `max_price` / `min_price` — price range filter on metadata
+- `is_active` — filter by active status
+
+Re-ranking boosts (applied to hybrid results):
+- **Recency boost** (+10%): Items updated within 30 days
+- **Type-match boost** (+15%): Content_type matches inferred query type
+- **Keyword density boost** (up to +15%): Proportion of query terms in content
+
+### 2. Enhanced SearchKnowledgeTool (`backend/agent/tools/search_knowledge.py`)
+New parameters: `search_mode` (hybrid/vector/keyword), `categories`, `max_price`, `min_price`
+
+### 3. Knowledge Management API (`backend/agent/knowledge_admin.py`) — New
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/agent/knowledge/` | GET | List with filtering (content_type, search, category, is_active) |
+| `/agent/knowledge/` | POST | Create item (auto-embeds) |
+| `/agent/knowledge/{id}/` | GET | Get single item |
+| `/agent/knowledge/{id}/` | PUT | Update item (re-embeds) |
+| `/agent/knowledge/{id}/` | DELETE | Delete item |
+| `/agent/knowledge/bulk/` | POST | Bulk upload JSON array |
+| `/agent/knowledge/reindex/` | POST | Re-index all items |
+
+All knowledge endpoints require `is_staff=True` (admin-only).
+
+---
+
+## Files Created / Modified
+
+| File | Status | Changes |
+|------|--------|---------|
+| `backend/agent/rag.py` | **Rewritten** | HybridSearchEngine with 3 search modes, metadata filtering, re-ranking |
+| `backend/agent/tools/search_knowledge.py` | Modified | Added search_mode, categories, max_price, min_price params |
+| `backend/agent/knowledge_admin.py` | **New** | CRUD views + bulk upload + re-index |
+| `backend/agent/urls.py` | Modified | Added 4 knowledge management routes |
+| `backend/agent/tests.py` | Modified | Added 26 new tests across 4 test classes |
+| `docs/ai-agent-development-roadmap.md` | Modified | Marked Milestone 8 complete |
+
+---
+
+## Testing Coverage (26 new tests)
+
+### HelperFunctionTest (9 tests)
+| Test | Scenario |
+|------|----------|
+| `test_normalize_scores_empty` | Empty list returns empty |
+| `test_normalize_scores_identical` | All identical → [0.5, 0.5, 0.5] |
+| `test_normalize_scores_varied` | Min-max normalization |
+| `test_l2_to_similarity` | Distance 0 → 1.0, distance 1 → 0.5 |
+| `test_inferred_content_type_menu` | "What dishes?" → menu_item |
+| `test_inferred_content_type_policy` | "Cancellation policy?" → policy |
+| `test_inferred_content_type_promotion` | "Happy hour deals?" → promotion |
+| `test_inferred_content_type_none` | "How are you?" → None |
+| `test_format_knowledge_context` | Context formatting includes tags and scores |
+
+### HybridSearchEngineTest (12 tests)
+| Test | Scenario |
+|------|----------|
+| `test_search_empty_query` | Empty query returns empty |
+| `test_keyword_search_finds_policy` | Keyword finds cancellation policy |
+| `test_keyword_search_finds_vegetarian` | Keyword finds vegetarian FAQ |
+| `test_content_type_filter` | Filter by content_type |
+| `test_content_type_filter_excludes_other_types` | Filter correctly excludes |
+| `test_is_active_filter` | Inactive excluded by default |
+| `test_is_active_include_inactive` | Inactive included when requested |
+| `test_max_price_filter` | Price filter works |
+| `test_categories_filter` | Category filter works |
+| `test_hybrid_search_returns_results` | Hybrid mode doesn't crash (falls back to keyword on SQLite) |
+| `test_top_k_limits_results` | top_k limits correctly |
+| `test_results_include_scores` | Results have score + score_components |
+
+### SearchKnowledgeFunctionTest (2 tests)
+| Test | Scenario |
+|------|----------|
+| `test_search_knowledge_backward_compatible` | Works without search_mode (backward compat) |
+| `test_search_knowledge_with_search_mode` | Accepts search_mode kwarg |
+
+### KnowledgeBaseCRUDTest (3 tests)
+| Test | Scenario |
+|------|----------|
+| `test_item_to_dict_includes_fields` | All expected fields in output |
+| `test_bulk_upload_validates_items` | Bulk upload view exists |
+| `test_reindex_view_exists` | Reindex view exists |
+
+---
+
+## Manual Verification
+
+### Test Hybrid Search via API
+```bash
+# Start the server
+cd backend && python manage.py runserver
+
+# Test keyword search
+curl "http://localhost:8000/api/v1/agent/chat/" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"message": "What are your gluten-free options under $15?"}'
+```
+
+### Test Knowledge Management API
+```bash
+# List knowledge items
+curl "http://localhost:8000/api/v1/agent/knowledge/?content_type=policy" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Create a new item
+curl -X POST "http://localhost:8000/api/v1/agent/knowledge/" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin_token>" \
+  -d '{
+    "title": "Summer Special",
+    "content": "15% off all cold drinks during summer months (June-August).",
+    "content_type": "promotion"
+  }'
+
+# Bulk upload
+curl -X POST "http://localhost:8000/api/v1/agent/knowledge/bulk/" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin_token>" \
+  -d '[
+    {"title": "New FAQ 1", "content": "Content for FAQ 1", "content_type": "faq"},
+    {"title": "New Policy", "content": "Policy content", "content_type": "policy"}
+  ]'
+
+# Re-index all
+curl -X POST "http://localhost:8000/api/v1/agent/knowledge/reindex/" \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+---
+
+## Success Criteria
+
+```
+✅ Agent: "Do you have vegetarian options under $15?"
+✅ Hybrid search: vector matches 'vegetarian', keyword matches 'under $15'
+✅ Metadata filter: max_price=15.0
+✅ Returns: vegetarian items priced ≤ $15 with relevance scores
+
+✅ Staff: Adds a new promotion via API
+✅ System: Auto-embeds and indexes instantly
+
+✅ Staff: Updates a menu description
+✅ System: Re-embeds on save (PUT)
+
+✅ Staff: Bulk uploads seasonal menus
+✅ System: Creates and indexes all items
+
+✅ Staff: Triggers re-index
+✅ System: Regenerates embeddings for all items
 ```
 
 ---
 
 ## Sources:
 
-
 ```
 Menu
-
 Policies
-
 FAQ
-
 Promotions
-
-Restaurant documents
-
+Restaurant documents (via admin upload)
 ```
 
 ---
 
-# Milestone 9: Multi-Agent System
+# Milestone 10: Multi-Agent System
 
 
 ## Goal
@@ -1281,7 +1448,7 @@ Specialized Agents
 
 ---
 
-# Milestone 10: Production Intelligence
+# Milestone 11: Production Intelligence
 
 
 ## Goal

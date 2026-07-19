@@ -1,5 +1,11 @@
 from django.urls import path
 
+from agent.knowledge_admin import (
+    KnowledgeBaseListView,
+    KnowledgeBaseDetailView,
+    KnowledgeBulkUploadView,
+    KnowledgeReindexView,
+)
 from agent.views import (
     ChatView, ChatStreamView, CustomerMemoryView,
     CustomerProfileView, EpisodicHistoryView, MemoryFactsView,
@@ -19,4 +25,9 @@ urlpatterns = [
     path("tool-logs/", ToolCallLogView.as_view(), name="tool-call-logs"),
     path("sessions/", SessionListView.as_view(), name="session-list"),
     path("sessions/<str:session_id>/", SessionDetailView.as_view(), name="session-detail"),
+    # Knowledge management
+    path("knowledge/", KnowledgeBaseListView.as_view(), name="knowledge-list"),
+    path("knowledge/bulk/", KnowledgeBulkUploadView.as_view(), name="knowledge-bulk"),
+    path("knowledge/reindex/", KnowledgeReindexView.as_view(), name="knowledge-reindex"),
+    path("knowledge/<int:item_id>/", KnowledgeBaseDetailView.as_view(), name="knowledge-detail"),
 ]
