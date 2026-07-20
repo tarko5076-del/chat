@@ -15,7 +15,7 @@ TIME_RE = re.compile(r"\bat\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b")
 TIME_COLON_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))\s*(am|pm)?\b")
 TIME_AMPM_RE = re.compile(r"\b(\d{1,2})\s*(am|pm)\b", re.I)
 TIME_HOURS_RE = re.compile(r"\b(\d{1,2})\s*hours?\s*(am|pm)?\b", re.I)
-PARTY_SIZE_RE = re.compile(r"(?:for|to)\s*(\d+)|(\d+)\s*(?:people|guests|person)")
+PARTY_SIZE_RE = re.compile(r"(?:for|to)\s*(\d+)|(\d+)\s*(?:people|guests|person|size|members)")
 NAME_PATTERNS = [
     re.compile(r"(?:my name is|name is|it's|it is|i am|i'm)\s+([A-Za-z]+(?: [A-Za-z]+)?)", re.I),
     re.compile(r"\bfor\s+([A-Za-z]+(?: [A-Za-z]+)?)\b", re.I),

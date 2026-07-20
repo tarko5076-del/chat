@@ -40,15 +40,88 @@ class ReservationWorkflow:
         "cancel", "never mind", "forget it", "nothing", "start over",
     })
     confirm_words = frozenset({
-        "yes", "confirm", "confirmed", "looks good", "book it", "go ahead",
-        "do it", "yeah", "sure", "ok", "okay",
+        "yes", "yes please", "book", "book it", "book now", "confirm", "confirm it",
+        "continue", "proceed", "do it", "okay", "sure", "go ahead",
     })
     decline_words = frozenset({
         "no", "not yet", "change", "edit", "wait", "different",
     })
 
+    # ── Common question starters that indicate a new topic ───────────────
+    _new_topic_markers = frozenset({
+        "what", "how", "why", "when", "where", "who", "which",
+        "can", "could", "would", "will", "do", "does", "did", "is", "are",
+        "show", "list", "tell", "give", "recommend",
+    })
+
     def __init__(self, agent: Any) -> None:
         self.agent = agent
+
+    def _message_is_new_topic(self, text: str) -> bool:
+        """Check if the message looks like a new question/topic rather than
+        a response to the current pending reservation question.
+
+        Returns True for messages starting with question words or
+        common request patterns ("what's", "show me", "recommend", etc.).
+        """
+        first_word = text.split()[0] if text.split() else ""
+        first_word = first_word.strip("?'\",.!")
+
+        if first_word in self._new_topic_markers:
+            return True
+
+        # Check for common multi-word starters
+        if text.startswith(("can i", "can you", "could you", "would you", "do you",
+                            "what is", "what's", "what are", "show me",
+                            "tell me", "give me", "i want", "i'd like",
+                            "i need", "how about")):
+            return True
+
+        # Check for new reservation keywords in a non-confirmation context
+        has_confirm = any(w in text for w in self.confirm_words)
+        has_cancel = any(w in text for w in self.cancel_words)
+        if not has_confirm and not has_cancel:
+            new_intents = {"menu", "order", "food", "recommend", "recommendation",
+                          "suggest", "suggestion", "pay", "payment"}
+            if new_intents & set(text.split()):
+                return True
+
+        return False
+
+    def _message_relates_to_current_state(self, text: str, status: str) -> bool:
+        """Check if the message could plausibly be a response to the current
+        pending reservation question.
+
+        This prevents the workflow from stealing messages from other handlers
+        when a reservation was started but the user changed the topic.
+        """
+        # If the user starts a new topic, it doesn't relate to reservation
+        if self._message_is_new_topic(text):
+            return False
+
+        # Check if the message contains info relevant to the current state
+        if status == "awaiting_date":
+            return bool(parse_date(text))
+        if status == "awaiting_time":
+            return bool(parse_time(text))
+        if status == "awaiting_party_size":
+            import re
+            return bool(re.search(r"\d+", text))
+        if status == "awaiting_customer_name":
+            # Might contain a name — accept if it's not clearly a new topic
+            return True
+        if status == "awaiting_phone":
+            import re
+            return bool(re.search(r"\d{5,}", text))
+        if status == "awaiting_email":
+            return "@" in text
+        if status == "awaiting_confirmation":
+            # Confirmations are short affirmative/negative words
+            has_confirm = any(w in text for w in self.confirm_words)
+            has_decline = any(w in text for w in self.decline_words)
+            return has_confirm or has_decline
+
+        return True
 
     # ─────────────────────────────────────────────────────────────────────
     # Main entry point
@@ -68,9 +141,14 @@ class ReservationWorkflow:
         if not status and not has_reservation_context:
             return None
 
-        # Cancel handler
+        # Cancel handler — always checked first, even before the new-topic guard
         if self._is_cancel(text):
             return self._cancel_reservation(memory)
+
+        # If we have a pending status, check that the message relates to it
+        # — prevents the workflow from stealing unrelated messages
+        if status and not self._message_relates_to_current_state(text, status):
+            return None
 
         # Route to current state handler
         if status == "awaiting_date":
@@ -178,11 +256,18 @@ class ReservationWorkflow:
         return self._prompt_next(memory)
 
     def _handle_party_size(self, text: str, memory: ConversationMemory) -> str:
+        # Try to extract party size more aggressively
         size = parse_party_size(text)
         if not size:
             size_match = re.search(r"\b(\d+)\b", text)
             if size_match:
                 size = int(size_match.group(1))
+        
+        # Log for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Party size extraction: text='{text}', extracted_size={size}")
+        
         if not size or size < 1:
             return "How many guests will be joining? (Please give me a number.)"
 
@@ -195,6 +280,7 @@ class ReservationWorkflow:
             )
 
         memory.party_size = size
+        logger.info(f"Party size set to: {size}")
         return self._prompt_next(memory)
 
     def _handle_name(self, text: str, message: str, memory: ConversationMemory) -> str:
@@ -227,8 +313,8 @@ class ReservationWorkflow:
         if not self._is_confirmation(text):
             return self._confirmation_prompt(memory) + "\n\nWould you like me to book this table?"
 
-        # All info collected — create the reservation
-        return await self._create_reservation(memory)
+        # User confirmed — create and confirm the reservation directly
+        return await self._create_and_confirm_reservation(memory)
 
     # ─────────────────────────────────────────────────────────────────────
     # Slot-availability check
@@ -303,6 +389,7 @@ class ReservationWorkflow:
             {
                 "action": "create",
                 "customer_name": memory.customer_name or "Guest",
+                "customer_id": memory.customer_id,
                 "phone": memory.phone or "",
                 "email": memory.email or "",
                 "reservation_date": memory.reservation_date,
@@ -314,6 +401,45 @@ class ReservationWorkflow:
 
         if not result.success:
             return result.message
+
+        # Set status to held so user can confirm
+        memory.reservation_status = "held"
+
+        return result.message
+
+    async def _create_and_confirm_reservation(self, memory: ConversationMemory) -> str:
+        """Create and confirm the reservation directly in one step."""
+        # First create the reservation
+        result = await self.agent._execute_tool(
+            "manage_reservation",
+            {
+                "action": "create",
+                "customer_name": memory.customer_name or "Guest",
+                "customer_id": memory.customer_id,
+                "phone": memory.phone or "",
+                "email": memory.email or "",
+                "reservation_date": memory.reservation_date,
+                "reservation_time": memory.reservation_time,
+                "party_size": memory.party_size,
+            },
+            memory,
+        )
+
+        if not result.success:
+            return result.message
+
+        # Immediately confirm it
+        confirm_result = await self.agent._execute_tool(
+            "manage_reservation",
+            {
+                "action": "confirm",
+                "reservation_id": memory.reservation_id,
+            },
+            memory,
+        )
+
+        if not confirm_result.success:
+            return f"{result.message}\n\nHowever, confirmation failed: {confirm_result.message}"
 
         memory.reservation_status = "completed"
 

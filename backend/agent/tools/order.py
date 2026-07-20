@@ -36,7 +36,7 @@ class OrderTool(BaseTool):
             "delivery_address": {"type": "string"},
             "payment_method": {
                 "type": "string",
-                "enum": ["card", "cash", "mobile_money", "gift_card"],
+                "enum": ["cash", "card", "telebirr", "cbe_birr", "chapa", "mobile_money"],
             },
             "quantity": {"type": "integer", "minimum": 1},
             "items": {

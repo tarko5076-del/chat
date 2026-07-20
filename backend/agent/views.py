@@ -26,7 +26,7 @@ def _format_sse(event: dict) -> str:
     return f"data: {json.dumps(event, default=str)}\n\n"
 
 
-def _build_memory_from_session(session, history, customer_name, email, phone):
+def _build_memory_from_session(session, history, customer_name, email, phone, customer_id):
     """Build a ConversationMemory from session history + persisted state.
 
     Restores order workflow state (order_status, order_state, payment_method,
@@ -52,6 +52,8 @@ def _build_memory_from_session(session, history, customer_name, email, phone):
 
     if customer_name:
         memory.customer_name = customer_name
+    if customer_id:
+        memory.customer_id = customer_id
     if email:
         memory.email = email
     if phone:
@@ -112,7 +114,7 @@ class ChatView(APIView):
         else:
             history = []
 
-        memory = _build_memory_from_session(session, history, customer_name, email, phone)
+        memory = _build_memory_from_session(session, history, customer_name, email, phone, customer_id)
 
         try:
             response_text = async_to_sync(agent.run)(
@@ -201,7 +203,7 @@ class ChatStreamView(APIView):
             history = []
 
         # Build memory (same pattern as ChatView)
-        memory = _build_memory_from_session(session, history, customer_name, email, phone)
+        memory = _build_memory_from_session(session, history, customer_name, email, phone, customer_id)
 
         # Process via agent.run (sync wrapper around the async agent, same as ChatView)
         try:

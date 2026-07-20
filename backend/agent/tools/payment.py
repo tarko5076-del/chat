@@ -18,7 +18,7 @@ class PaymentTool(BaseTool):
         "the customer must visit to complete payment. Supports Chapa (Telebirr, "
         "CBE Birr, bank card) and cash on delivery."
     )
-    supported_methods = ["chapa", "telebirr", "cbe_birr", "cash"]
+    supported_methods = ["chapa", "telebirr", "cbe_birr", "card", "mobile_money", "cash"]
     parameters = {
         "type": "object",
         "properties": {
@@ -26,7 +26,7 @@ class PaymentTool(BaseTool):
             "payment_method": {
                 "type": "string",
                 "enum": supported_methods,
-                "description": "Payment method: chapa (online), telebirr, cbe_birr, or cash",
+                "description": "Payment method: chapa (online), telebirr, cbe_birr, card, mobile_money, or cash",
             },
             "customer_email": {
                 "type": "string",
@@ -82,6 +82,31 @@ class PaymentTool(BaseTool):
                 missing_fields=["order_id"],
                 next_action="ask_user",
             )
+
+        # Check idempotency first
+        idem_key = kwargs.get("idempotency_key")
+        if idem_key:
+            existing_payment = self.payment_service.repo.get_by_idempotency_key(idem_key)
+            if existing_payment:
+                return ToolResult(
+                    success=True,
+                    message=(
+                        f"Payment for Order #{existing_payment.order.id} was already processed (Idempotent request). "
+                        f"Total: ${float(existing_payment.amount):.2f}."
+                    ),
+                    data={
+                        "order_id": existing_payment.order.id,
+                        "payment_id": existing_payment.transaction_ref,
+                        "payment_method": existing_payment.provider,
+                        "order_status": "paid" if existing_payment.status == "completed" else "awaiting_payment",
+                    },
+                    memory_updates={
+                        "payment_method": existing_payment.provider,
+                        "payment_status": "paid" if existing_payment.status == "completed" else "pending",
+                        "payment_id": existing_payment.transaction_ref,
+                        "order_status": "paid" if existing_payment.status == "completed" else "awaiting_payment",
+                    }
+                )
 
         if order.status == "paid":
             return ToolResult(

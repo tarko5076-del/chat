@@ -22,6 +22,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    volumes:
+      - ./backend:/app
     ports:
       - "8000:8000"
     depends_on:

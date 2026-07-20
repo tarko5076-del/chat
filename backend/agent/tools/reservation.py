@@ -150,6 +150,7 @@ class ReservationTool(BaseTool):
 
         reservation = self.service.create_reservation(
             customer_name=kwargs["customer_name"],
+            customer_id=kwargs.get("customer_id"),
             phone=kwargs["phone"],
             email=kwargs["email"],
             reservation_date=date.fromisoformat(kwargs["reservation_date"]),

@@ -14,7 +14,7 @@ class FAQTool(BaseTool):
 
     answers = {
         "hours": "We are open daily from 11:00 AM to 10:00 PM.",
-        "address": "Our address is 42 Market Street, Downtown.",
+        "address": "Our address is 4kilo , Addis abeba.",
         "parking": "Validated parking is available in the Market Street garage after 5:00 PM.",
         "delivery": "We offer delivery within 5 miles through our restaurant team.",
         "wifi": "Free guest Wi-Fi is available. Ask your server for today's password.",

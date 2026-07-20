@@ -203,7 +203,6 @@ class ConversationMemory:
             "awaiting_payment_method",
             "awaiting_customer_name",
             "awaiting_confirmation",
-            "awaiting_menu_confirmation",
         }:
             return self.order_status
         if self.order_state.get("waiting_for"):

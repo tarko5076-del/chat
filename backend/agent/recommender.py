@@ -142,10 +142,21 @@ class RecommendationService:
 
         if query := preferences.get("query"):
             q = query.lower()
+            # Full string match (highest boost)
             if q in item.name.lower():
                 score += 12
             elif q in item.description.lower():
                 score += 8
+            # Word-level match (any word in query matches item name or description)
+            query_words = [w for w in q.split() if len(w) > 2]  # skip short words
+            if query_words:
+                name_lower = item.name.lower()
+                desc_lower = item.description.lower()
+                word_matches = sum(1 for w in query_words if w in name_lower or w in desc_lower)
+                if word_matches >= 2:
+                    score += 6
+                elif word_matches == 1:
+                    score += 3
 
         if dietary := preferences.get("dietary"):
             d = dietary.lower()
@@ -200,16 +211,15 @@ class RecommendationService:
 
         # ── Fallback for when no preferences at all ───────────────────────
         if not reasons:
-            # Only give a fallback score if NO preferences were specified
-            # (user just asked for recommendations without any criteria).
-            # If preferences were specified and nothing matched, score stays 0.
+            # Only give a fallback score if no HARD preferences were specified.
+            # A 'query' is just a natural-language search term — it boosts
+            # matching items but doesn't exclude unmatched ones.
             has_preferences = bool(
                 preferences.get("vegetarian")
                 or preferences.get("vegan")
                 or preferences.get("spicy")
                 or preferences.get("max_price")
                 or preferences.get("category")
-                or preferences.get("query")
                 or preferences.get("dietary")
             )
             if not has_preferences and not profile:

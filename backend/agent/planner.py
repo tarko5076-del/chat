@@ -30,7 +30,10 @@ class LocalPlanner:
                 return [{"tool": "manage_order", "args": self._order_args(message, memory)}]
             return [{"tool": "manage_cart", "args": self._cart_args(message, memory)}]
 
-        if "menu" in text or "recommend" in text or "vegetarian" in text or "vegan" in text or "spicy" in text:
+        if "recommend" in text or "recommendation" in text or "recomend" in text or "recomendation" in text or "suggest" in text or "sugest" in text:
+            return [{"tool": "recommend_menu_items", "args": self._recommend_args(text, memory)}]
+
+        if "menu" in text or "vegetarian" in text or "vegan" in text or "spicy" in text:
             return [{"tool": "list_menu_items", "args": self._menu_args(text)}]
 
         if "bill" in text or "total" in text or "split" in text:
@@ -57,13 +60,46 @@ class LocalPlanner:
 
         return [{"tool": "answer_faq", "args": {"question": message}}]
 
+    def _recommend_args(self, text: str, memory: ConversationMemory) -> dict[str, Any]:
+        """Extract recommendation preferences from natural language.
+
+        Extracts dietary preferences, price hints, and sets the full
+        text as a query for the recommendation engine to score against item
+        names and descriptions. Does NOT map meal keywords to categories,
+        since category names vary between menus.
+        """
+        preferences: dict[str, Any] = {}
+
+        text_lower = text.lower()
+
+        # Dietary preferences
+        if "vegetarian" in text_lower:
+            preferences["dietary"] = "vegetarian"
+        if "vegan" in text_lower:
+            preferences["dietary"] = "vegan"
+        if "spicy" in text_lower:
+            preferences["spicy"] = True
+
+        # Price hints (e.g. "under $15", "below 20 dollars", "less than 10")
+        if match := re.search(r"(?:under|below|less than)\s*\$?(\d+)", text_lower):
+            preferences["max_price"] = float(match.group(1))
+
+        # Set a natural language query for text-scoring against item names/descriptions
+        preferences["query"] = text
+
+        args: dict[str, Any] = {"preferences": preferences}
+        if memory.customer_id:
+            args["customer_id"] = memory.customer_id
+
+        return args
+
     def _has_explicit_intent_keyword(self, text: str) -> bool:
         return any(
             word in text
             for word in [
                 "reservation", "table", "book", "reserve",
                 "order", "add", "remove", "cart",
-                "menu", "recommend", "vegetarian", "vegan", "spicy",
+                "menu", "recommend", "recommendation", "recomend", "recomendation", "suggest", "sugest", "vegetarian", "vegan", "spicy",
                 "bill", "total", "split",
                 "hour", "hours", "open", "address", "parking", "wifi",
             ]

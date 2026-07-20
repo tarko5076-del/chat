@@ -22,7 +22,7 @@ class UnsupportedPaymentMethodError(PaymentServiceError):
     pass
 
 
-SUPPORTED_METHODS = ["chapa", "telebirr", "cbe_birr", "cash"]
+SUPPORTED_METHODS = ["chapa", "telebirr", "cbe_birr", "card", "mobile_money", "cash"]
 
 
 class PaymentService:
@@ -71,9 +71,6 @@ class PaymentService:
                 f"Supported methods: {', '.join(SUPPORTED_METHODS)}"
             )
 
-        if order.status == "paid":
-            raise PaymentServiceError(f"Order #{order.id} has already been paid.")
-
         # Check idempotency
         if idempotency_key:
             existing = self.repo.get_by_idempotency_key(idempotency_key)
@@ -82,6 +79,19 @@ class PaymentService:
                     return existing, None
                 if existing.checkout_url:
                     return existing, existing.checkout_url
+
+        # Check if payment already exists for this order
+        existing_payment = self.repo.get_by_order_id(order.id)
+        if existing_payment:
+            if existing_payment.status == "completed":
+                return existing_payment, None
+            if existing_payment.checkout_url:
+                return existing_payment, existing_payment.checkout_url
+            # If payment exists but no checkout URL, return it anyway
+            return existing_payment, None
+
+        if order.status == "paid":
+            raise PaymentServiceError(f"Order #{order.id} has already been paid.")
 
         if payment_method == "cash":
             return self._process_cash_payment(

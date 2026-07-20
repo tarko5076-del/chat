@@ -46,7 +46,7 @@ class CheckoutCartTool(BaseTool):
             },
             "payment_method": {
                 "type": "string",
-                "enum": ["cash", "chapa", "telebirr", "card"],
+                "enum": ["cash", "chapa", "telebirr", "cbe_birr", "card", "mobile_money"],
                 "description": "How the customer wants to pay",
             },
             "confirmed": {

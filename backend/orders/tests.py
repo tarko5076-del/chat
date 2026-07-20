@@ -19,6 +19,7 @@ class OrderViewSetTest(APITestCase):
         )
         self.refresh = RefreshToken.for_user(self.user)
         self.access_token = str(self.refresh.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.access_token}")
 
         self.order = Order.objects.create(
             customer_name="Test Customer",

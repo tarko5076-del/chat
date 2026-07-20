@@ -451,8 +451,23 @@ class OrderWorkflow:
                 return self._confirmation_prompt(memory)
             return self._payment_method_prompt()
 
+        # Check if order status is awaiting payment or payment pending, and user says they paid
+        if (memory.order_status == "awaiting_payment" or memory.payment_status in ("pending", "failed")) and self._user_says_paid(text):
+            result = await self.agent._execute_tool(
+                "verify_payment",
+                {"order_id": memory.order_id},
+                memory,
+            )
+            return result.message
+
         method = self._payment_method(text)
         payment_confirmed = False
+        
+        # If user confirms and payment method is already set, use it
+        if not method and self._is_confirmation(text) and memory.payment_method:
+            method = memory.payment_method
+            payment_confirmed = True
+        
         if not method and memory.payment_method == "mobile_money" and self._payment_sent(text):
             method = "mobile_money"
             payment_confirmed = True
@@ -710,7 +725,17 @@ class OrderWorkflow:
             return True
         if memory.payment_status in {"pending", "failed"} and memory.order_id:
             return True
+        if self._user_says_paid(text) and memory.order_id:
+            return True
         return any(word in text for word in self.payment_words) and bool(memory.order_id)
+
+    def _user_says_paid(self, text: str) -> bool:
+        phrases = [
+            "i paid", "i finished", "done", "completed", "payment sent",
+            "i have paid", "finished payment", "paid already", "i completed it",
+            "it is done", "payment completed", "already paid"
+        ]
+        return any(phrase in text for phrase in phrases)
 
     # ────────────────────────────────────────────────────────────────────────
     # Text classification helpers
@@ -736,7 +761,10 @@ class OrderWorkflow:
         return "remove" in text or "delete" in text
 
     def _is_menu_request(self, text: str) -> bool:
-        return any(word in text for word in ["menu", "recommend", "vegetarian", "vegan", "spicy"])
+        return any(word in text for word in [
+            "menu", "recommend", "recommendation", "recomend", "recomendation",
+            "vegetarian", "vegan", "spicy",
+        ])
 
     def _is_order_history_request(self, text: str) -> bool:
         return any(word in text for word in self.order_history_words)
@@ -821,6 +849,7 @@ class OrderWorkflow:
             return None
 
         patterns = [
+            r"i want to order\s+(?:\d+\s+|one\s+|two\s+|three\s+)?(.+)",
             r"(?:i want|i'd like|id like|order|add|get me|can i get)\s+(?:\d+\s+|one\s+|two\s+|three\s+)?(.+)",
             r"do you have\s+(.+)",
         ]

@@ -1,15 +1,28 @@
 from decimal import Decimal
 
 from django.test import TestCase
+from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from orders.models import Order, OrderItem
 from .models import Payment
 
+User = get_user_model()
+
 
 class PaymentViewSetTest(APITestCase):
     def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="TestPass123!",
+        )
+        self.refresh = RefreshToken.for_user(self.user)
+        self.access_token = str(self.refresh.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.access_token}")
+
         self.order = Order.objects.create(
             customer_name="Test Customer",
             customer_id="cust-123",
