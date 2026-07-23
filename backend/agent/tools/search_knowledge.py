@@ -5,10 +5,13 @@ from agent.tools.base import BaseTool, ToolResult
 class SearchKnowledgeTool(BaseTool):
     name = "search_knowledge"
     description = (
-        "Search the restaurant's knowledge base for menu items, policies, FAQs, "
-        "and promotions using advanced hybrid search (combines semantic understanding "
-        "with keyword matching). Use this when the user asks about dishes, ingredients, "
-        "allergens, restaurant rules, prices, or current deals."
+        "Search for specific restaurant knowledge: hours, address, parking, policies, "
+        "ingredients, allergens, prices, promotions, or FAQs. Uses hybrid search "
+        "(semantic + keyword). Only use this when the user asks a concrete factual "
+        "question about the restaurant's operations, menu details, or policies. "
+        "Do NOT use for: greetings, casual conversation, questions about the AI "
+        "assistant's identity, or general restaurant overview questions — those "
+        "should be answered directly without any tool."
     )
     parameters = {
         "type": "object",
@@ -78,16 +81,15 @@ class SearchKnowledgeTool(BaseTool):
         if not results:
             return ToolResult(
                 success=True,
-                message="No matching results found in the knowledge base.",
+                message="No relevant information found in the knowledge base.",
                 data={"results": [], "query": query, "search_mode": search_mode},
             )
 
         context = format_knowledge_context(results)
-        titles = [r["title"] for r in results]
 
         return ToolResult(
             success=True,
-            message=f"Found {len(results)} relevant items: {', '.join(titles)}",
+            message="Knowledge base results retrieved.",
             data={
                 "results": results,
                 "query": query,

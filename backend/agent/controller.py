@@ -498,8 +498,28 @@ class RestaurantAgent:
         )
         return selected
 
+    @staticmethod
+    def _is_conversational(message: str) -> bool:
+        text = message.strip().lower().rstrip("!?.,;:")
+        patterns = [
+            "hi", "hello", "hey", "howdy", "yo", "sup",
+            "good morning", "good afternoon", "good evening",
+            "bye", "goodbye", "see you", "talk to you later", "see ya", "later",
+            "thanks", "thank you", "appreciate it", "thanks for your help", "cheers",
+            "who are you", "what can you do", "are you a robot", "are you ai",
+            "what's your name", "what is your name", "your name",
+            "how are you", "how're you", "how's it going", "how's your day",
+            "nice weather", "nice day", "nice to meet you",
+            "ok", "okay", "sure", "great", "sounds good", "alright", "got it",
+            "what's up", "how are things", "long time no see",
+            "awesome", "perfect", "fine", "good", "nice",
+        ]
+        return text in patterns
+
     async def _retrieve_rag_context(self, message: str) -> str:
-        """Auto-retrieve relevant knowledge for the user's message."""
+        if self._is_conversational(message):
+            logger.debug("Skipping RAG retrieval for conversational message")
+            return ""
         try:
             results = await sync_to_async(search_knowledge)(message, top_k=3)
             return format_knowledge_context(results)

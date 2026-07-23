@@ -148,7 +148,7 @@ TAX_RATE: float = 0.0825
 DELIVERY_FEE: float = 4.99
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", os.getenv("HF_TOKEN", ""))
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", os.getenv("HF_BASE_URL", "https://api-inference.huggingface.co/v1"))
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", os.getenv("HF_BASE_URL", "https://router.huggingface.co/v1"))
 LLM_MODEL = os.getenv("LLM_MODEL", os.getenv("HF_MODEL", "meta-llama/Llama-3.1-8B-Instruct"))
 LLM_FALLBACK_API_KEY = os.getenv("LLM_FALLBACK_API_KEY", "")
 LLM_FALLBACK_BASE_URL = os.getenv("LLM_FALLBACK_BASE_URL", "")

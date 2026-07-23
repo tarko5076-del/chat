@@ -25,7 +25,9 @@ REFLECTION_PROMPT = (
     "the user's request, respond with a final answer now. If you still need to call "
     "additional tools to complete the task, call the next tool. If a tool failed or "
     "returned unexpected data, reason about an alternative approach. Never repeat the "
-    "exact same tool call."
+    "exact same tool call. "
+    "IMPORTANT: Your final response must be written in natural language. "
+    "Never expose raw tool output, JSON, or internal data structures to the user."
 )
 
 ToolTraceCallback = Callable[[str, dict[str, Any], ToolResult, int | None], None]

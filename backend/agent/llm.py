@@ -173,7 +173,14 @@ class LLMClient:
     async def _call_primary(
         self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], stream: bool = False,
     ) -> Any:
-        kwargs = self._build_kwargs(messages, tools, self.model, stream=stream)
+        model = self.model
+        base_url = str(self.client.base_url) if self.client else "N/A"
+        key_present = "yes" if (self.client and self.client.api_key) else "no"
+        logger.info(
+            "LLM PROVIDER: primary MODEL: %s BASE URL: %s API KEY PRESENT: %s",
+            model, base_url, key_present,
+        )
+        kwargs = self._build_kwargs(messages, tools, model, stream=stream)
         return await self.client.chat.completions.create(**kwargs)
 
     async def _call_fallback(
